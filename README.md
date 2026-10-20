@@ -6,7 +6,7 @@ Little animations and self-playing games for the 8×8 LED matrix of the
 | Script | What it shows |
 | --- | --- |
 | `beating_heart.py` | A red heart pulsing like a heartbeat |
-| `cpu_temp.py` | The Pi's CPU temperature as two digits plus a bar, green to red |
+| `cpu_temp.py` | The Pi’s CPU temperature as two digits plus a bar, green to red. A wild flame flares up when it runs hot; a happy ^_^ face pops up when it stays cool |
 | `firefly.py` | Softly coloured fireflies drifting and glowing in the dark |
 | `matrix.py` | Green "Matrix" code rain with the odd flicker |
 | `platformer.py` | A tiny hero with 3 lives runs through ever harder levels: pits, pipes, coins, enemies and birds |
