@@ -201,7 +201,7 @@ LAUNCH_COL = (60, 50, 0)
 
 # ---------- playfield ----------
 # pop bumpers in a tight triangle: (x, y) centre (pixel i spans i to i+1)
-BUMPERS = [(3.0, 4.0), (5.0, 4.0), (4.0, 5.7)]
+BUMPERS = [(3.0, 2.2), (5.0, 2.2), (4.0, 3.6)]   # high up, out of the way of flipper shots
 BUMPER_RADIUS = 0.5
 BUMPER_BOOST = 4.5
 
