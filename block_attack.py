@@ -9,7 +9,7 @@ worth a lot more points. The stack rises faster and faster: when it pushes
 against the top, it's game over.
 
 The computer plays a demo until you touch the joystick: then you play.
-Move the cursor with the joystick, press to swap. After game over, or when you
+Move the cursor one block per push of the joystick, press to swap. After game over, or when you
 leave the joystick alone for a while, the computer takes over again.
 """
 import atexit
@@ -155,7 +155,7 @@ TICK = 0.02                 # Seconds per game step
 RISE_DELAY = 4.5            # Seconds between new rows at the start ...
 RISE_SPEEDUP = 0.98         # ... a little faster with every new row ...
 MIN_RISE_DELAY = 1.0        # ... down to this
-CURSOR_DELAY = 0.12         # Seconds per cursor step while a direction is held
+CURSOR_DELAY = 0.12         # Seconds between queued cursor steps
 AI_CURSOR_DELAY = 0.15      # Seconds per cursor step for the computer
 FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
@@ -355,9 +355,8 @@ def resolve(sense, game):
 
 def joystick_controls(stick, pressed):
     keys = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+    # One step per press: holding a direction does not keep the cursor moving
     move = next((keys[k] for k in pressed if k in keys), None)
-    if move is None:
-        move = next((keys[k] for k in stick.held if k in keys), None)
     return move, "middle" in pressed
 
 
