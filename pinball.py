@@ -13,7 +13,7 @@ On the playfield:
     the ball rides over the top and drops onto the left flipper  1000 points
   - every ramp shot lights a third of the ramp orange; at 3 -> MULTIBALL:
     2 extra balls are launched and every ramp shot is a jackpot  3000 points
-  - 2 slingshots above the flippers (orange) that kick the ball away
+  - 2 slingshots high up against the side walls (orange) that kick the ball away
   - 2 top lanes (green)                                        50 / 500 bonus
   - long flippers with a 2-pixel gap in the middle; the AI sometimes catches
     the ball, lets it settle and then aims at the ramp, bumpers or lanes
@@ -211,10 +211,11 @@ WALLS = [
     ((5.5, 0.5), (7.5, 2.5)),
 ]
 
-# slingshots above the flippers (leaving an inlane along the outer wall)
+# slingshots above the flippers
+# short and high against the side walls, so shots off the flippers fly past them
 SLINGS = [
-    ((1.3, 8.2), (2.3, 9.8)),
-    ((6.7, 8.2), (5.7, 9.8)),
+    ((0.6, 7.0), (1.6, 8.6)),
+    ((7.4, 7.0), (6.4, 8.6)),
 ]
 SLING_KICK = 7.0
 
@@ -479,17 +480,17 @@ class Pinball:
         return math.hypot(b.x - cx, b.y - cy), t
 
     def predict_landing(self, b):
-        """Will the ball land on a flipper past a slingshot? Which one?"""
+        """Will the ball land on a flipper? Which one?"""
         dy = 10.0 - b.y
         disc = b.vy * b.vy + 2 * GRAVITY * dy
         if dy <= 0 or disc < 0:
             return None
         t = (-b.vy + math.sqrt(disc)) / GRAVITY
         x = b.x + b.vx * t
-        # outside (inlane) or inside of the slingshot
-        if x < 1.1 or 2.4 < x < 3.3:
+        # anywhere above a flipper, except the gap in the middle
+        if 0.5 <= x < 3.3:
             return self.left
-        if x > W - 1.1 or W - 3.3 < x < W - 2.4:
+        if W - 3.3 < x <= W - 0.5:
             return self.right
         return None
 
@@ -679,10 +680,12 @@ class Pinball:
         """Aimed shot: try out a range of shots in simulation and pick one that
         hits the target (ramp, bumpers or top lanes)."""
         f.aimed = False
+        # Aim for the ramp or the top lanes; the bumpers sit higher up and get
+        # hit on the way back down, so they are only a last resort
         if f.side < 0:
-            goals = random.choice([["ramp", "bumper"], ["ramp", "lane"], ["bumper", "ramp"]])
+            goals = random.choice([["ramp", "lane"], ["lane", "ramp"]])
         else:
-            goals = random.choice([["bumper", "lane"], ["lane", "bumper"], ["ramp", "bumper"]])
+            goals = random.choice([["lane", "ramp"], ["ramp", "lane"]])
         outcomes = {}
         for vy in (-16.5, -18.5):
             for i in range(-22, 23):

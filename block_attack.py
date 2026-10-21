@@ -159,6 +159,8 @@ CURSOR_DELAY = 0.12         # Seconds between queued cursor steps
 AI_CURSOR_DELAY = 0.15      # Seconds per cursor step for the computer
 FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
+AI_LOOKAHEAD = 12           # Set-up swaps the computer looks one move further into
+AI_SETUP_WEIGHT = 0.7      # How much a set-up for the next swap is worth now
 
 
 def find_matches(grid):
@@ -200,19 +202,42 @@ def safe_color(grid, x, y, check_below=False):
     return random.choice([c for c in range(len(COLORS)) if c not in banned])
 
 
-def settle(grid):
-    """Simulate falling and clearing until nothing happens. Returns (blocks, chains)."""
-    cleared = chains = 0
+def settle_points(grid):
+    """Like settle(), but scored like the real game: returns (points, chains, biggest match)."""
+    points = chains = biggest = 0
     while True:
         while fall_one_row(grid):
             pass
         matches = find_matches(grid)
         if not matches:
-            return cleared, chains
+            return points, chains, biggest
         chains += 1
-        cleared += len(matches)
+        n = len(matches)
+        points += n * 10 * chains + max(0, n - 3) * 20
+        biggest = max(biggest, n)
         for x, y in matches:
             grid[y][x] = None
+
+
+def stack_height(grid):
+    return max((8 - y for y in range(8) for x in range(8) if grid[y][x] is not None), default=0)
+
+
+def swap_options(grid):
+    """Every useful swap: yields (x, y, grid after the swap has settled, points, chains, biggest)."""
+    for y in range(8):
+        for x in range(7):
+            if grid[y][x] == grid[y][x + 1]:     # also skips two empty cells
+                continue
+            after = [row[:] for row in grid]
+            after[y][x], after[y][x + 1] = after[y][x + 1], after[y][x]
+            points, chains, biggest = settle_points(after)
+            yield x, y, after, points, chains, biggest
+
+
+def swap_value(points, chains, biggest):
+    """What the computer likes: points, and extra for chains and matches of more than 3."""
+    return points + max(0, chains - 1) * 90 + max(0, biggest - 3) * 45
 
 
 class Game:
@@ -256,29 +281,26 @@ class Game:
 
     # ---------- the computer player ----------
     def choose_swap(self):
-        best, best_value = None, None
-        height = max((8 - y for y in range(8) for x in range(8) if self.grid[y][x] is not None),
-                     default=0)
-        for y in range(8):
-            for x in range(7):
-                if self.grid[y][x] is None and self.grid[y][x + 1] is None:
-                    continue
-                if self.grid[y][x] == self.grid[y][x + 1]:
-                    continue
-                grid = [row[:] for row in self.grid]
-                grid[y][x], grid[y][x + 1] = grid[y][x + 1], grid[y][x]
-                cleared, chains = settle(grid)
-                new_height = max((8 - gy for gy in range(8) for gx in range(8)
-                                  if grid[gy][gx] is not None), default=0)
-                value = (cleared * 10 + chains * 25 - (new_height - height) * 6
-                         - abs(x - self.cursor[0]) * 0.3 - abs(y - self.cursor[1]) * 0.3
-                         + random.random())
-                if best_value is None or value > best_value:
-                    best, best_value = (x, y), value
-        if best is None or random.random() < AI_SLOPPY:
-            x, y = random.randint(0, 6), random.randint(3, 7)
-            return x, y
-        return best
+        """The computer's pick. It prefers matches of more than 3 and chains, and it
+        looks one swap ahead: a swap that clears nothing now can set up a big clear
+        or a chain for the next swap."""
+        height = stack_height(self.grid)
+        options = []
+        for x, y, after, points, chains, biggest in swap_options(self.grid):
+            value = (swap_value(points, chains, biggest) - (stack_height(after) - height) * 6
+                     - abs(x - self.cursor[0]) * 0.3 - abs(y - self.cursor[1]) * 0.3
+                     + random.random())
+            options.append([value, x, y, after, points])
+        setups = [o for o in options if o[4] == 0]
+        random.shuffle(setups)
+        for option in setups[:AI_LOOKAHEAD]:
+            follow = max((swap_value(p, c, b) for _, _, _, p, c, b in swap_options(option[3])),
+                         default=0)
+            option[0] += follow * AI_SETUP_WEIGHT
+        if not options or random.random() < AI_SLOPPY:
+            return random.randint(0, 6), random.randint(3, 7)
+        best = max(options, key=lambda o: o[0])
+        return best[1], best[2]
 
     def ai_controls(self):
         """Returns (move, swap) like the joystick would."""
