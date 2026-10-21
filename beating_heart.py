@@ -71,7 +71,9 @@ def run(main):
 # ---------------------------------------------------------------------------
 
 
-# Shades of red, from off (0) to full brightness (4)
+# Shades of red, from off (0) to full brightness (4).
+# Each colour is an (R, G, B) tuple: red, green and blue, each from 0 (off) to 255 (full).
+# The heart pictures below use the numbers 0-4 as an index into this list.
 SHADES = [
     (0, 0, 0),
     (70, 0, 0),
@@ -80,6 +82,9 @@ SHADES = [
     (255, 0, 0),
 ]
 
+# The three heart sizes. Each is 64 numbers: 8 rows of 8 LEDs, read left to right,
+# top to bottom. Every number picks a shade from SHADES (0 = off, 4 = brightest).
+# The small heart, shown while the heart "rests" between beats
 SMALL = [
     0, 0, 1, 0, 0, 1, 0, 0,
     0, 1, 2, 1, 1, 2, 1, 0,
@@ -91,6 +96,7 @@ SMALL = [
     0, 0, 0, 0, 0, 0, 0, 0,
 ]
 
+# The in-between heart, shown while growing and shrinking so the beat looks smooth
 MEDIUM = [
     0, 1, 2, 0, 0, 2, 1, 0,
     1, 2, 3, 3, 3, 3, 2, 1,
@@ -102,6 +108,7 @@ MEDIUM = [
     0, 0, 0, 0, 0, 0, 0, 0,
 ]
 
+# The big, bright heart at the peak of the beat
 LARGE = [
     0, 2, 3, 0, 0, 3, 2, 0,
     2, 3, 4, 4, 4, 4, 3, 2,
@@ -113,7 +120,9 @@ LARGE = [
     0, 0, 0, 1, 1, 0, 0, 0,
 ]
 
-# One heartbeat: (frame, seconds to show it)
+# One heartbeat: (frame, seconds to show it).
+# The whole beat takes 1.3 seconds (about 46 beats per minute). Make the times
+# shorter for a faster, more excited heart, or longer for a calmer one.
 HEARTBEAT = [
     (SMALL, 0.25),   # Resting
     (MEDIUM, 0.2),   # Growing
@@ -124,8 +133,18 @@ HEARTBEAT = [
 
 
 def main():
+    """Show the beating heart on the LEDs, forever (until Ctrl+C or another script).
+
+    Takes no arguments and never returns. It first turns every heart picture from
+    shade numbers (0-4) into real colours, once, so the loop below only has to send
+    ready-made pixel lists to the LEDs. Then it plays the HEARTBEAT frames over and
+    over, waiting the given number of seconds after each one.
+    """
     sense = init(hat)
+    # Translate each number in each picture into its (R, G, B) colour from SHADES.
+    # Doing this up front means no work is wasted on it while the heart beats.
     frames = [([SHADES[v] for v in frame], delay) for frame, delay in HEARTBEAT]
+    # Play the heartbeat again and again: show a frame, hold it, show the next one
     while True:
         for pixels, delay in frames:
             sense.set_pixels(pixels)
