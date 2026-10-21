@@ -4,6 +4,9 @@
 The playfield is 8 wide x 16 tall. The 8x8 LED matrix shows a window that
 follows the ball (scrolling camera), just like a real, tall pinball table.
 
+Every ball is shot up a launch lane on the right, like a real plunger, and
+enters the playfield from the top.
+
 On the playfield:
   - 3 pop bumpers close together (red, flash yellow)          100 points
   - a dark grey ramp: only reachable with a shot straight off a flipper;
@@ -194,6 +197,7 @@ RAMP_HIT = (130, 130, 130)
 RAMP_LIT = (255, 120, 0)
 TOP_LANE_COL = (0, 90, 0)
 TOP_LANE_HIT = (0, 255, 80)
+LAUNCH_COL = (60, 50, 0)
 
 # ---------- playfield ----------
 # pop bumpers in a tight triangle: (x, y) centre (pixel i spans i to i+1)
@@ -220,6 +224,13 @@ RAMP_PATH = [(6.4, 7.2), (7.0, 5.0), (6.6, 1.4), (4.0, 0.6),
              (1.4, 1.4), (1.0, 5.0), (0.8, 9.0)]
 RAMP_ENTRY_X = (5.0, 7.5)
 RAMP_ENTRY_Y = 7.2
+
+# launch lane: like a real plunger, every new ball first shoots up the right
+# side, curves over the top and enters the playfield from above. The lane is
+# only drawn while a ball is in it.
+LAUNCH_PATH = [(7.5, 15.5), (7.5, 3.0), (7.3, 1.3), (6.5, 0.6), (5.2, 0.7)]
+LAUNCH_SPEED = 15.0     # cells / s
+LAUNCH_WAIT = 0.6       # seconds the ball waits at the bottom (pulling the plunger)
 
 # top lanes: bonus points when the ball passes through
 TOP_LANES = [3, 4]
@@ -272,14 +283,13 @@ class Ramp:
 
 class Ball:
     def __init__(self):
-        # launched upwards from the gap between the flippers
-        self.x = 4.0 + random.uniform(-0.2, 0.2)
-        self.y = 15.4
-        self.vx = random.uniform(-2.5, 2.5)
-        self.vy = -random.uniform(18.0, 20.5)
+        # starts in the launch lane at the bottom right; it rides the lane like a ramp
+        self.x, self.y = LAUNCH_PATH[0]
+        self.vx = self.vy = 0.0
         self.slow_time = 0.0
-        self.on_ramp = False
-        self.ramp_s = 0.0
+        self.on_ramp = True
+        self.ride = "launch"        # "launch" = in the launch lane, "ramp" = on the ramp
+        self.ramp_s = -LAUNCH_SPEED * LAUNCH_WAIT
         self.flipper_shot = False   # just shot by a flipper (required to make the ramp)
         # per-ball AI memory
         self.armed = True
@@ -379,6 +389,8 @@ class Pinball:
         self.flippers = [self.left, self.right]
         self.ramp = Ramp(RAMP_PATH)
         self.ramp_pixels = self.ramp.pixels()
+        self.launch_lane = Ramp(LAUNCH_PATH)
+        self.launch_pixels = self.launch_lane.pixels()
         self.balls = [Ball()]
         self.launch_queue = []        # delays before extra multiball balls launch
         self.bumper_flash = [0.0] * len(BUMPERS)
@@ -481,6 +493,16 @@ class Pinball:
 
     # ---------- physics ----------
     def ride_ramp(self, b, dt):
+        if b.ride == "launch":
+            b.ramp_s += LAUNCH_SPEED * dt
+            b.x, b.y = self.launch_lane.point(b.ramp_s)
+            if b.ramp_s >= self.launch_lane.length:
+                # out of the launch lane: into the top of the playfield, heading left
+                b.on_ramp = False
+                b.vx = -random.uniform(3.0, 6.5)
+                b.vy = random.uniform(0.0, 2.0)
+                b.armed = True
+            return
         b.ramp_s += RAMP_SPEED * dt
         b.x, b.y = self.ramp.point(b.ramp_s)
         if b.ramp_s >= self.ramp.length:
@@ -495,6 +517,7 @@ class Pinball:
 
     def ramp_hit(self, b):
         b.on_ramp = True
+        b.ride = "ramp"
         b.ramp_s = 0.0
         b.flipper_shot = False
         self.ramp_flash = 1.2
@@ -802,6 +825,11 @@ class Pinball:
 
         for i, (a, c) in enumerate(WALLS):
             self.draw_segment(field, a, c, WALL_COL, mirrored=i == 1)
+
+        # the launch lane is only there while a ball is in it
+        if any(b.on_ramp and b.ride == "launch" for b in self.balls):
+            for (x, y) in self.launch_pixels:
+                field[y][x] = LAUNCH_COL
 
         # the ramp sits above the playfield; every part already "earned" lights orange
         blink = int(self.ramp_flash * 10) % 2 if self.ramp_flash > 0 else 0

@@ -18,8 +18,8 @@ Little animations and games for the 8×8 LED matrix of the
 | --- | --- |
 | `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains, in the style of Tetris Attack |
 | `breakout.py` | Smash all the bricks with a ball and paddle, level after level |
-| `frogger.py` | Get the frog across the road and over the river on the logs into its 4 homes |
-| `pinball.py` | A pinball table twice as tall as the display, with a camera following the ball: pop bumpers, slingshots, top lanes, a ramp and multiball |
+| `frogger.py` | Hop as far up as you can through an endless, ever faster world of roads and rivers that keeps scrolling up. 10 points per row, 50 per fly |
+| `pinball.py` | A pinball table twice as tall as the display, with a camera following the ball: a launch lane, pop bumpers, slingshots, top lanes, a ramp and multiball |
 | `platformer.py` | A tiny hero with 3 lives runs through ever harder levels: pits, pipes, coins, enemies and birds |
 | `pong.py` | Pong to 5 points, with angled shots and a ball that speeds up |
 | `snake.py` | A snake hunting for food that changes colour every time |

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Sense HAT – Frogger: help the frog cross the road and the river.
+"""Sense HAT – Frogger: hop as far up as you can in a never-ending world.
 
-Hop the frog from the bottom row to one of the 4 homes at the top. First dodge
-the cars and trucks on the road, rest on the grey strip in the middle, then
-hop across the river on the drifting logs: the water is deadly, and so is
-drifting off the edge. Each frog has 30 seconds to get home. Fill all 4 homes
-for the next, faster level. You have 3 lives.
+The frog hops upward through an endless world of grass strips, busy roads and
+rivers with drifting logs. Dodge the cars and trucks, and ride the logs across
+the river: the water is deadly, and so is drifting off the edge. The world
+keeps scrolling up by itself, so don't dawdle: if the frog drops off the bottom
+of the screen, you lose a life. The further you get, the faster the traffic,
+the shorter the logs and the quicker the scrolling. You have 3 lives.
+
+Points: 10 for every new row you reach, 50 for every fly you catch on the
+grass (the white dots).
 
 The computer plays a demo until you touch the joystick: then you play.
 Push the joystick to hop up, down, left or right. After game over, or when you
@@ -145,63 +149,77 @@ def show_play_sign(sense):
 
 # Colours
 FROG = (120, 255, 0)
-HEDGE = (0, 70, 0)
-HOME_EMPTY = (0, 0, 0)
-HOME_FULL = (0, 255, 120)
-WATER = (0, 0, 90)
-LOG = (130, 70, 20)
+GRASS = (0, 60, 0)
+FLY = (255, 255, 255)
 ROAD = (0, 0, 0)
-STRIP = (40, 40, 40)          # The safe strip in the middle and the start row
+WATER = (0, 0, 100)
+LOG = (130, 70, 20)
+CAR_COLORS = [(255, 0, 0), (255, 200, 0), (255, 0, 255), (0, 200, 255), (255, 120, 0)]
 SPLAT = (255, 0, 0)
 
-# The playfield, row by row:
-#   0      hedge with 4 homes
-#   1, 2   river with logs
-#   3      safe strip
-#   4-6    road with cars and trucks
-#   7      start
-HOMES = (1, 3, 4, 6)
-START = (3, 7)
+# Gameplay
+TICK = 0.02                # Seconds per game step
+LIVES = 3
+SCROLL_DELAY = 4.0         # Seconds per row the world scrolls up by itself at the start ...
+MIN_SCROLL_DELAY = 1.2     # ... and the fastest it gets
+FLY_CHANCE = 0.35          # Chance a grass strip has a fly on it
+AI_DELAY = 0.3             # Seconds the computer waits between hops
+AI_MISTAKE = 0.03          # Chance the computer hops without looking (on the road)
 
 
-class Lane:
-    """A row of objects ("#" in the pattern) that slides left or right."""
+def difficulty(row):
+    """0 at the start, growing slowly the further up you are."""
+    return row / 25
 
-    def __init__(self, y, pattern, direction, delay, color, river=False):
-        self.y = y
-        self.pattern = pattern
-        self.direction = direction
-        self.base_delay = delay
-        self.delay = delay
-        self.color = color
-        self.river = river
-        self.offset = random.randrange(len(pattern))
-        self.timer = 0.0
+
+class Row:
+    """One row of the world: grass, road or river. Roads and rivers slide sideways."""
+
+    def __init__(self, kind, level=0.0):
+        self.kind = kind
+        self.fly = None
+        if kind == "grass":
+            self.pattern = "." * 8
+            if random.random() < FLY_CHANCE:
+                self.fly = random.randint(0, 7)
+            return
+        self.direction = random.choice([-1, 1])
+        self.delay = max(0.12, random.uniform(0.3, 0.55) * 0.93 ** level)
+        if kind == "road":
+            self.color = random.choice(CAR_COLORS)
+            length = random.choice([1, 1, 2])                      # Cars and trucks
+            gap_min = max(2, 5 - int(level))
+            parts = []
+            while sum(len(p) for p in parts) < 14:
+                parts.append("#" * length + "." * random.randint(gap_min, gap_min + 3))
+        else:
+            length_max = max(2, 4 - int(level / 2))                 # Logs get shorter
+            parts = []
+            while sum(len(p) for p in parts) < 14:
+                parts.append("#" * random.randint(2, length_max) + "." * random.randint(2, 3))
+        self.pattern = "".join(parts)
+        self.offset = random.randrange(len(self.pattern))
+        self.timer = random.uniform(0, self.delay)
 
     def occupied(self, x, offset=None):
+        if self.kind == "grass":
+            return False
         offset = self.offset if offset is None else offset
         return self.pattern[(x - offset) % len(self.pattern)] == "#"
 
+    def deadly(self, x, offset=None):
+        if not 0 <= x <= 7:
+            return True
+        if self.kind == "road":
+            return self.occupied(x, offset)
+        if self.kind == "river":
+            return not self.occupied(x, offset)
+        return False
+
     def steps_within(self, seconds):
-        """How many times this lane will move in the next `seconds`."""
+        if self.kind == "grass":
+            return 0
         return int((self.timer + seconds) / self.delay)
-
-
-LANES = [
-    # y  pattern            direction delay  colour          river
-    (1, "##...##....##...", -1, 0.60, LOG, True),
-    (2, "###....###.....",   1, 0.50, LOG, True),
-    (4, "#...#....#...",    -1, 0.30, (255, 0, 255), False),
-    (5, "##.....##......",   1, 0.38, (255, 200, 0), False),
-    (6, "#....#.....#....", -1, 0.45, (255, 60, 0), False),
-]
-
-TICK = 0.02                # Seconds per game step
-LIVES = 3
-LEVEL_SPEEDUP = 0.87       # Lanes move this much faster each level
-AI_DELAY = 0.3             # Seconds the computer waits between hops
-AI_MISTAKE = 0.03          # Chance the computer hops without looking
-FROG_TIME = 30             # Seconds each frog has to reach a home
 
 
 class Game:
@@ -209,142 +227,143 @@ class Game:
         self.human = human
         self.lives = LIVES
         self.score = 0
-        self.level = 1
-        self.lanes = [Lane(*spec) for spec in LANES]
-        self.homes = set()            # Filled homes
-        self.new_frog()
-
-    def new_frog(self):
-        self.frog = list(START)
-        self.best_row = 7
+        self.rows = [Row("grass"), Row("grass")]   # rows[0] is the bottom of the world
+        self.camera = 0                            # World row shown at the bottom of the screen
+        self.scroll_timer = 0.0
+        self.frog = [3, 0]                         # x, world row
+        self.best = 0
         self.ai_timer = 0.0
-        self.time_left = FROG_TIME
+        self.extend()
 
-    def lane(self, y):
-        return next((lane for lane in self.lanes if lane.y == y), None)
+    def extend(self):
+        """Make sure the world is generated a bit beyond the top of the screen."""
+        while len(self.rows) < self.camera + 12:
+            level = difficulty(len(self.rows))
+            kind = random.choice(["road", "road", "river"])
+            count = random.randint(1, min(4, 2 + int(level)))
+            for _ in range(count):
+                self.rows.append(Row(kind, level))
+            self.rows.append(Row("grass"))
 
-    def next_level(self):
-        self.level += 1
-        self.homes = set()
-        for lane in self.lanes:
-            lane.delay = lane.base_delay * LEVEL_SPEEDUP ** (self.level - 1)
-        self.new_frog()
+    def row(self, r):
+        return self.rows[r]
+
+    def scroll_delay(self):
+        return max(MIN_SCROLL_DELAY, SCROLL_DELAY * 0.95 ** (self.camera / 2))
 
     # ---------- rules ----------
-    def deadly(self, x, y):
-        """Is the frog dead at (x, y) right now?"""
-        if not 0 <= x <= 7:
-            return True
-        if y == 0:
-            return x not in HOMES or x in self.homes
-        lane = self.lane(y)
-        if lane is None:
-            return False
-        return lane.occupied(x) != lane.river      # Car on the road, or no log in the river
-
     def hop(self, dx, dy):
-        x, y = self.frog[0] + dx, self.frog[1] + dy
-        if 0 <= x <= 7 and 0 <= y <= 7:
-            self.frog = [x, y]
-            if y < self.best_row:
-                self.best_row = y
-                self.score += 10
+        x, r = self.frog[0] + dx, self.frog[1] + dy
+        if 0 <= x <= 7 and r >= self.camera:
+            self.frog = [x, r]
+            if r > self.best:
+                self.score += 10 * (r - self.best)
+                self.best = r
+            row = self.row(r)
+            if row.fly == x:
+                row.fly = None
+                self.score += 50
+            # Keep the frog in the lower half: hopping up pulls the screen along
+            if r - self.camera > 4:
+                self.camera = r - 4
+                self.scroll_timer = 0.0
+            self.extend()
 
     def step(self, hop):
-        """Advance one tick. Returns "dead", "home", "cleared" or None."""
+        """Advance one tick. Returns "dead" or None."""
         if hop:
             self.hop(*hop)
-            if self.frog[1] == 0 and not self.deadly(*self.frog):
-                self.homes.add(self.frog[0])
-                self.score += 50
-                if len(self.homes) == len(HOMES):
-                    self.score += 200
-                    return "cleared"
-                return "home"
-        for lane in self.lanes:
-            lane.timer += TICK
-            if lane.timer >= lane.delay - 1e-9:
-                lane.timer = 0.0
-                lane.offset += lane.direction
-                if lane.river and self.frog[1] == lane.y:
-                    self.frog[0] += lane.direction     # The frog drifts along on its log
-        self.time_left -= TICK
-        if self.deadly(*self.frog) or self.time_left <= 0:
+        for r in range(max(0, self.camera - 1), self.camera + 10):
+            row = self.row(r)
+            if row.kind == "grass":
+                continue
+            row.timer += TICK
+            if row.timer >= row.delay - 1e-9:
+                row.timer = 0.0
+                row.offset += row.direction
+                if row.kind == "river" and self.frog[1] == r:
+                    self.frog[0] += row.direction      # The frog drifts along on its log
+        self.scroll_timer += TICK
+        if self.scroll_timer >= self.scroll_delay():
+            self.scroll_timer = 0.0
+            self.camera += 1                          # The world scrolls up by itself
+            self.extend()
+        if self.frog[1] < self.camera:                # Dropped off the bottom
+            return "dead"
+        if self.row(self.frog[1]).deadly(self.frog[0]):
             return "dead"
         return None
 
+    def respawn(self):
+        """Put a new frog on the grass strip nearest the middle of the screen."""
+        middle = self.camera + 3
+        grass = [r for r in range(self.camera + 1, self.camera + 8) if self.row(r).kind == "grass"]
+        r = min(grass, key=lambda g: abs(g - middle)) if grass else self.camera + 1
+        self.frog = [3, r]
+        self.scroll_timer = 0.0
+        self.ai_timer = 0.0
+
     # ---------- the computer player ----------
-    def safe_for(self, x, y, seconds):
-        """Will a frog at (x, y) survive the next `seconds`?"""
-        if not 0 <= x <= 7:
+    def safe_for(self, x, r, seconds):
+        """Will a frog at (x, world row r) survive the next `seconds`?"""
+        if not 0 <= x <= 7 or r < self.camera:
             return False
-        if y == 0:
-            return x in HOMES and x not in self.homes
-        lane = self.lane(y)
-        if lane is None:
+        row = self.row(r)
+        if row.kind == "grass":
             return True
-        for k in range(lane.steps_within(seconds) + 1):
-            offset = lane.offset + lane.direction * k
-            fx = x + lane.direction * k if lane.river else x
-            if not 0 <= fx <= 7 or lane.occupied(fx, offset) != lane.river:
+        for k in range(row.steps_within(seconds) + 1):
+            offset = row.offset + row.direction * k
+            fx = x + row.direction * k if row.kind == "river" else x
+            if row.deadly(fx, offset):
                 return False
         return True
-
-    def home_ahead(self, x):
-        """Will the log in the top river row carry a frog at x past an empty home?"""
-        direction = self.lane(1).direction
-        return any((h - x) * direction >= 0 for h in HOMES if h not in self.homes)
 
     def ai_controls(self):
         self.ai_timer += TICK
         if self.ai_timer < AI_DELAY:
             return None
         self.ai_timer = 0.0
-        x, y = self.frog
+        x, r = self.frog
         look = AI_DELAY + 0.15
-        if y >= 4 and random.random() < AI_MISTAKE:     # A careless hop on the road
-            return random.choice([(0, -1), (-1, 0), (1, 0)])
+        row = self.row(r)
+        if row.kind == "road" and random.random() < AI_MISTAKE:
+            return random.choice([(0, 1), (-1, 0), (1, 0)])
 
-        if y == 1:
-            # On the top log: hop home when we pass an empty one, otherwise ride along
-            options = [(0, -1)] if x in HOMES and x not in self.homes else []
-            options += [(0, 0) if self.home_ahead(x) else None,
-                        (1, 0) if self.home_ahead(x + 1) else None,
-                        (-1, 0) if self.home_ahead(x - 1) else None,
-                        (0, 1)]
-        elif y == 2:
-            # Only hop onto the top log if it will carry us past an empty home
-            options = [(0, -1) if self.home_ahead(x) else None, (0, 0)]
-            options += [(-self.lane(1).direction, 0), (self.lane(1).direction, 0), (0, 1)]
-        else:
-            options = [(0, -1), (0, 0)]
-            # Drift towards the middle columns, then try sideways, then back down
-            side = 1 if x < 3 else -1 if x > 4 else random.choice([-1, 1])
-            options += [(side, 0), (-side, 0), (0, 1)]
-
-        for option in options:
-            if option and self.safe_for(x + option[0], y + option[1], look):
-                return None if option == (0, 0) else option
+        # Running out of screen: going up is the only real option
+        hurry = r - self.camera <= 1 and self.scroll_timer > self.scroll_delay() - 1.0
+        options = [(0, 1)]
+        if row.fly is not None and not hurry:          # Grab the fly on this strip first
+            options.insert(0, ((row.fly > x) - (row.fly < x), 0))
+        if not hurry:
+            options.append((0, 0))
+        side = 1 if x < 3 else -1 if x > 4 else random.choice([-1, 1])
+        options += [(side, 0), (-side, 0)]
+        if not hurry:
+            options += [(0, -1)]
+        for dx, dy in options:
+            if self.safe_for(x + dx, r + dy, look):
+                return None if (dx, dy) == (0, 0) else (dx, dy)
         return None   # Nothing is safe: stay and hope
 
+    # ---------- drawing ----------
     def draw(self, sense, frog=True):
-        frame = [[ROAD] * 8 for _ in range(8)]
-        frame[0] = [HOME_FULL if x in self.homes else HOME_EMPTY if x in HOMES else HEDGE
-                    for x in range(8)]
-        frame[3] = [STRIP] * 8
-        frame[7] = [STRIP] * 8
-        for lane in self.lanes:
-            for x in range(8):
-                if lane.occupied(x):
-                    frame[lane.y][x] = lane.color
-                elif lane.river:
-                    frame[lane.y][x] = WATER
-        if frog and 0 <= self.frog[0] <= 7:
-            frame[self.frog[1]][self.frog[0]] = FROG
+        frame = []
+        for sy in range(8):
+            row = self.row(self.camera + 7 - sy)
+            if row.kind == "grass":
+                line = [FLY if x == row.fly else GRASS for x in range(8)]
+            elif row.kind == "road":
+                line = [row.color if row.occupied(x) else ROAD for x in range(8)]
+            else:
+                line = [LOG if row.occupied(x) else WATER for x in range(8)]
+            frame.append(line)
+        x, r = self.frog
+        if frog and 0 <= x <= 7 and 0 <= r - self.camera <= 7:
+            frame[7 - (r - self.camera)][x] = FROG
         sense.set_pixels(flatten(frame))
 
 
-KEYS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+KEYS = {"up": (0, 1), "down": (0, -1), "left": (-1, 0), "right": (1, 0)}
 
 
 def play_game(sense, stick, human):
@@ -362,14 +381,14 @@ def play_game(sense, stick, human):
             hop = next((KEYS[k] for k in pressed if k in KEYS), None)
         else:
             hop = game.ai_controls()
-        result = game.step(hop)
 
-        if result == "dead":
+        if game.step(hop) == "dead":
             game.lives -= 1
             x = max(0, min(7, game.frog[0]))
+            sy = 7 - max(0, min(7, game.frog[1] - game.camera))
             for _ in range(3):
                 game.draw(sense, frog=False)
-                sense.set_pixel(x, game.frog[1], SPLAT)
+                sense.set_pixel(x, sy, SPLAT)
                 time.sleep(0.15)
                 game.draw(sense, frog=False)
                 time.sleep(0.15)
@@ -377,18 +396,7 @@ def play_game(sense, stick, human):
                 return "over", game.score
             sense.show_letter(str(game.lives), text_colour=FROG)
             time.sleep(0.6)
-            game.new_frog()
-        elif result == "home":
-            game.draw(sense, frog=False)
-            time.sleep(0.4)
-            game.new_frog()
-        elif result == "cleared":
-            for _ in range(3):
-                sense.clear(HOME_FULL)
-                time.sleep(0.15)
-                sense.clear()
-                time.sleep(0.15)
-            game.next_level()
+            game.respawn()
 
         game.draw(sense)
         time.sleep(TICK)
