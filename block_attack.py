@@ -146,7 +146,7 @@ def show_play_sign(sense):
 
 OFF = (0, 0, 0)
 COLORS = [(255, 0, 0), (255, 220, 0), (0, 220, 0), (0, 180, 255), (200, 0, 255)]
-CURSOR_EMPTY = (90, 90, 90)
+CURSOR = (255, 255, 255)   # The two cursor blocks blink bright white
 FLASH = (255, 255, 255)
 GAME_OVER = (80, 80, 80)
 
@@ -322,9 +322,7 @@ class Game:
         if cursor and (self.ticks // 12) % 2 == 0:       # The cursor blinks
             cx, cy = self.cursor
             for x in (cx, cx + 1):
-                c = self.grid[cy][x]
-                frame[cy][x] = (CURSOR_EMPTY if c is None
-                                else tuple((v + 255) // 2 for v in COLORS[c]))
+                frame[cy][x] = CURSOR
         sense.set_pixels(flatten(frame))
 
 
