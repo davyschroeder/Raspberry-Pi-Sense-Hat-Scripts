@@ -6,9 +6,10 @@ Little animations and self-playing games for the 8×8 LED matrix of the
 | Script | What it shows |
 | --- | --- |
 | `beating_heart.py` | A red heart pulsing like a heartbeat |
-| `cpu_temp.py` | The Pi’s CPU temperature as two digits plus a bar, green to red. A wild flame flares up when it runs hot; a happy ^_^ face pops up when it stays cool |
+| `cpu_temp.py` | The Pi's CPU temperature as two digits plus a bar, green to red. A wild flame flares up when it runs hot; a happy ^_^ face pops up when it stays cool |
 | `firefly.py` | Softly coloured fireflies drifting and glowing in the dark |
 | `matrix.py` | Green "Matrix" code rain with the odd flicker |
+| `pinball.py` | A self-playing pinball table twice as tall as the display, with a camera following the ball: pop bumpers, slingshots, top lanes, a ramp and multiball |
 | `platformer.py` | A tiny hero with 3 lives runs through ever harder levels: pits, pipes, coins, enemies and birds |
 | `pong.py` | Two computer players play Pong to 5 points, with angled shots and a ball that speeds up |
 | `snake.py` | A computer-controlled snake hunting for food that changes colour every time |
@@ -44,6 +45,15 @@ Stop a script with **Ctrl+C**; the LEDs switch off on exit.
 
 Starting a script automatically stops any other script from this folder that
 is still running, so you can simply switch from one animation to the next.
+
+### Pinball joystick
+
+`pinball.py` plays by itself, but you can join in with the Sense HAT joystick:
+
+| Joystick | Action |
+| --- | --- |
+| Press | Switch between the follow camera and an overview of the whole table |
+| Left / right | Tilt the table to nudge the balls |
 
 ### Display rotation
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-Self-playing pinball machine for the Raspberry Pi Sense HAT.
+"""Sense HAT – Pinball: a self-playing pinball machine.
 
 The playfield is 8 wide x 16 tall. The 8x8 LED matrix shows a window that
 follows the ball (scrolling camera), just like a real, tall pinball table.
@@ -27,7 +26,14 @@ import math
 import random
 import time
 
-from sense_hat import SenseHat
+try:
+    from sense_hat import SenseHat
+    hat = SenseHat()
+except (ImportError, OSError):  # No Sense HAT library or board found: use the emulator
+    from sense_emu import SenseHat
+    hat = SenseHat()
+
+from common import init, run
 
 # ---------- settings ----------
 W, H = 8, 16            # playfield
@@ -236,9 +242,12 @@ class Flipper:
 
 
 class Pinball:
-    def __init__(self):
-        self.sense = SenseHat()
-        self.sense.low_light = False
+    def __init__(self, sense):
+        self.sense = sense
+        try:
+            self.sense.low_light = False
+        except (AttributeError, OSError):
+            pass    # Not every Sense HAT version (or the emulator) supports this
         # flipper tips at x=3.2 and x=4.8, drawn in columns 0-2 and 5-7: a 2-pixel gap
         self.left = Flipper((0.0, 11.4), (3.2, 14.3), (3.4, 10.8), -1, (0, 2))
         self.right = Flipper((8.0, 11.4), (4.8, 14.3), (4.6, 10.8), +1, (5, 7))
@@ -747,27 +756,26 @@ class Pinball:
         self.balls = [Ball()]
         self.cam = 8.0
 
-    def run(self):
+    def play(self):
         next_frame = time.monotonic()
-        try:
-            while True:
-                self.handle_input()
-                if self.update():
-                    self.ball_lost()
-                    next_frame = time.monotonic()
-                    continue
-                self.render()
-                next_frame += DT
-                delay = next_frame - time.monotonic()
-                if delay > 0:
-                    time.sleep(delay)
-                else:
-                    next_frame = time.monotonic()
-        except KeyboardInterrupt:
-            pass
-        finally:
-            self.sense.clear()
+        while True:
+            self.handle_input()
+            if self.update():
+                self.ball_lost()
+                next_frame = time.monotonic()
+                continue
+            self.render()
+            next_frame += DT
+            delay = next_frame - time.monotonic()
+            if delay > 0:
+                time.sleep(delay)
+            else:
+                next_frame = time.monotonic()
+
+
+def main():
+    Pinball(init(hat)).play()
 
 
 if __name__ == "__main__":
-    Pinball().run()
+    run(main)
