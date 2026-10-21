@@ -17,6 +17,8 @@ BACKGROUND = (0, 40, 0)   # Faint scrolling background lines
 # Trail shades, index 1 (dim tail) .. 4 (bright head)
 GREENS = [OFF, (0, 120, 0), (0, 160, 0), (0, 200, 0), (0, 255, 0)]
 GLITCH = (0, 255, 0)
+# The head (lowest pixel) of every trail flickers through these greens, a new one each frame
+HEAD_GREENS = [(0, 255, 0), (120, 255, 120), (180, 255, 180), (0, 220, 80), (80, 255, 40)]
 
 DROP_CHANCE = 0.11         # Chance per column per frame that a new trail starts
 SPARK_CHANCE = 0.10        # Chance per frame of a short, still flash somewhere
@@ -40,7 +42,8 @@ class Drop:
         for i in range(self.length):
             y = self.y - i
             if 0 <= y <= 7:
-                yield y, GREENS[max(1, 4 - i)]
+                color = random.choice(HEAD_GREENS) if i == 0 else GREENS[max(1, 4 - i)]
+                yield y, color
 
     def advance(self):
         """Move down; returns False once the whole trail has left the screen."""
