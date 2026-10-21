@@ -13,7 +13,8 @@ On the playfield:
     the ball rides over the top and drops onto the left flipper  1000 points
   - every ramp shot lights a third of the ramp orange; at 3 -> MULTIBALL:
     2 extra balls are launched and every ramp shot is a jackpot  3000 points
-  - 2 slingshots high up against the side walls (orange) that kick the ball away
+  - 2 slingshots above the flippers (orange) that kick away balls coming from
+    above; shots from the flippers pass through them from behind
   - 2 top lanes (green)                                        50 / 500 bonus
   - long flippers with a 2-pixel gap in the middle; the AI sometimes catches
     the ball, lets it settle and then aims at the ramp, bumpers or lanes
@@ -211,11 +212,12 @@ WALLS = [
     ((5.5, 0.5), (7.5, 2.5)),
 ]
 
-# slingshots above the flippers
-# short and high against the side walls, so shots off the flippers fly past them
+# slingshots above the flippers (leaving an inlane along the outer wall).
+# Only their upper (inner) face is solid: a ball coming from above is kicked away,
+# a ball shot up from a flipper passes straight through from behind.
 SLINGS = [
-    ((0.6, 7.0), (1.6, 8.6)),
-    ((7.4, 7.0), (6.4, 8.6)),
+    ((1.3, 8.2), (2.3, 9.8)),
+    ((6.7, 8.2), (5.7, 9.8)),
 ]
 SLING_KICK = 7.0
 
@@ -307,6 +309,16 @@ class Ghost:
 
     def __init__(self, x, y, vx, vy):
         self.x, self.y, self.vx, self.vy = x, y, vx, vy
+
+
+def on_front(ball, a, c):
+    """Does the ball come at a slingshot from above, onto its upper (front) side?"""
+    if ball.vy <= 0:
+        return False                         # on its way up (a flipper shot): passes through
+    nx, ny = c[1] - a[1], a[0] - c[0]      # a normal of the segment ...
+    if ny > 0:
+        nx, ny = -nx, -ny                    # ... the one that points up
+    return (ball.x - a[0]) * nx + (ball.y - a[1]) * ny > 0
 
 
 def collide_segment(ball, a, b, restitution=0.55):
@@ -480,17 +492,17 @@ class Pinball:
         return math.hypot(b.x - cx, b.y - cy), t
 
     def predict_landing(self, b):
-        """Will the ball land on a flipper? Which one?"""
+        """Will the ball land on a flipper past a slingshot? Which one?"""
         dy = 10.0 - b.y
         disc = b.vy * b.vy + 2 * GRAVITY * dy
         if dy <= 0 or disc < 0:
             return None
         t = (-b.vy + math.sqrt(disc)) / GRAVITY
         x = b.x + b.vx * t
-        # anywhere above a flipper, except the gap in the middle
-        if 0.5 <= x < 3.3:
+        # outside (inlane) or inside of the slingshot
+        if x < 1.1 or 2.4 < x < 3.3:
             return self.left
-        if W - 3.3 < x <= W - 0.5:
+        if x > W - 1.1 or W - 3.3 < x < W - 2.4:
             return self.right
         return None
 
@@ -586,6 +598,8 @@ class Pinball:
 
         # slingshots: active kick when the ball hits them hard enough
         for i, (a, c) in enumerate(SLINGS):
+            if not on_front(b, a, c):
+                continue                     # from behind: the ball passes through
             v_before = b.speed()
             hit = collide_segment(b, a, c, restitution=0.5)
             if hit is not None:
@@ -732,7 +746,7 @@ class Pinball:
                 for a, c in WALLS:
                     collide_segment(ghost, a, c, restitution=0.6)
             for a, c in SLINGS:
-                if collide_segment(ghost, a, c) is not None:
+                if on_front(ghost, a, c) and collide_segment(ghost, a, c) is not None:
                     return "sling"
             for bx, by in BUMPERS:
                 if math.hypot(ghost.x - bx, ghost.y - by) < R + BUMPER_RADIUS:
