@@ -172,7 +172,7 @@ GRAVITY = 9.0           # cells / s^2
 R = 0.5                 # ball radius
 MAX_SPEED = 22.0
 BALLS_PER_GAME = 3
-AI_SKILL = 0.90         # chance the AI hits an incoming ball correctly
+AI_SKILL = 0.97         # chance the AI hits an incoming ball correctly
 AI_CATCH = 0.85        # chance the AI catches a ball and then takes an aimed shot
 AI_CATCH_RAMP = 0.7     # same, for a ball coming off the ramp
 RAMP_SPEED = 11.0       # cells / s along the ramp
@@ -383,9 +383,11 @@ class Pinball:
             self.sense.low_light = False
         except (AttributeError, OSError):
             pass    # Not every Sense HAT version (or the emulator) supports this
-        # flipper tips at x=3.2 and x=4.8, drawn in columns 0-2 and 5-7: a 2-pixel gap
-        self.left = Flipper((0.0, 11.4), (3.2, 14.3), (3.4, 10.8), -1, (0, 2))
-        self.right = Flipper((8.0, 11.4), (4.8, 14.3), (4.6, 10.8), +1, (5, 7))
+        # flipper tips at x=3.5 and x=4.5: the gap between them is exactly one ball wide.
+        # They're drawn in columns 0-2 and 5-7, plus a half-lit "half pixel" for the tip
+        # in columns 3 and 4.
+        self.left = Flipper((0.0, 11.4), (3.5, 14.55), (3.7, 10.75), -1, (0, 2))
+        self.right = Flipper((8.0, 11.4), (4.5, 14.55), (4.3, 10.75), +1, (5, 7))
         self.flippers = [self.left, self.right]
         self.ramp = Ramp(RAMP_PATH)
         self.ramp_pixels = self.ramp.pixels()
@@ -855,9 +857,14 @@ class Pinball:
             field[int(by)][int(bx)] = BUMPER_HIT if self.bumper_flash[i] > 0 else BUMPER_COL
 
         for f in self.flippers:
-            self.draw_segment(field, f.pivot, f.tip(),
-                              FLIPPER_UP if f.pos > 0.3 else FLIPPER_COL, f.pixel_range,
+            color = FLIPPER_UP if f.pos > 0.3 else FLIPPER_COL
+            self.draw_segment(field, f.pivot, f.tip(), color, f.pixel_range,
                               mirrored=f.side > 0)
+            # the tip: half a pixel, drawn at half brightness next to the flipper
+            tip_x = 3 if f.side < 0 else 4
+            tip_y = int(clamp(f.tip()[1], 0, H - 1))
+            if field[tip_y][tip_x] == BLACK:
+                field[tip_y][tip_x] = tuple(c // 2 for c in color)
 
         # ball save active: the gap between the flippers blinks green
         if self.ball_save > 0 and int(self.ball_save * 4) % 2 == 0:
