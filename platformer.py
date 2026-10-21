@@ -6,6 +6,10 @@ and dodge birds on the way to the flag. The hero has 3 lives and now and
 then reacts a moment too late, so you never know if it will make it.
 Every level is a bit harder than the last. When all lives are gone, the
 score scrolls by and a new game starts.
+
+The computer plays a demo until you touch the joystick: then you play.
+Left and right to run, up or press to jump. After game over, or when you
+leave the joystick alone for a while, the computer takes over again.
 """
 import atexit
 import os
@@ -76,6 +80,66 @@ def run(main):
         main()
     except KeyboardInterrupt:
         pass
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Joystick: the computer plays a demo until someone touches the joystick
+# ---------------------------------------------------------------------------
+IDLE_TIMEOUT = 30   # Seconds without joystick input before the computer takes over again
+
+PLAY_SIGN = [
+    "..#.....",
+    "..##....",
+    "..###...",
+    "..####..",
+    "..####..",
+    "..###...",
+    "..##....",
+    "..#.....",
+]
+
+
+class Joystick:
+    """Keeps track of the Sense HAT joystick (or the emulator's: arrow keys + Enter)."""
+
+    def __init__(self, sense):
+        self.sense = sense
+        self.held = set()        # Directions held down right now
+        self.last_input = 0.0
+
+    def read(self):
+        """Return the directions pressed since the last call ("up", "left", "middle", ...)."""
+        pressed = []
+        try:
+            events = self.sense.stick.get_events()
+        except (AttributeError, OSError):
+            return pressed
+        for event in events:
+            self.last_input = time.monotonic()
+            if event.action == "pressed":
+                pressed.append(event.direction)
+                self.held.add(event.direction)
+            elif event.action == "held":
+                self.held.add(event.direction)
+            elif event.action == "released":
+                self.held.discard(event.direction)
+        return pressed
+
+    def idle(self):
+        """True when nobody touched the joystick for IDLE_TIMEOUT seconds."""
+        return time.monotonic() - self.last_input > IDLE_TIMEOUT
+
+    def flush(self):
+        """Forget presses that are still waiting, e.g. during a game-over message."""
+        self.read()
+        self.held.clear()
+
+
+def show_play_sign(sense):
+    """A green play symbol: you're in control now."""
+    sense.set_pixels([(0, 255, 0) if c == "#" else (0, 0, 0) for row in PLAY_SIGN for c in row])
+    time.sleep(0.8)
 # ---------------------------------------------------------------------------
 
 
@@ -179,8 +243,12 @@ class Hero:
         return any(0 <= self.x + dx < WORLD_WIDTH and world[self.y - dy][self.x + dx] == COIN
                    for dx in (1, 2, 3) for dy in (2, 3) if self.y - dy >= 0)
 
-    def update(self, world, walkers, birds, game):
-        """Advance one step. Returns "won", "dead" or None."""
+    def update(self, world, walkers, birds, game, controls=None):
+        """Advance one step. Returns "won", "dead" or None.
+
+        controls is None when the computer plays, or (step, jump) when you do:
+        step is -1, 0 or 1 and jump is True when the jump button is pressed.
+        """
         if self.dead:
             if self.hop:
                 self.y -= 1
@@ -211,8 +279,21 @@ class Hero:
                     game["score"] += 1
                     break
 
-        # On the ground: look ahead first and decide whether to jump
         grounded = self.on_ground(world)
+        if controls is not None:                # You play: do what the joystick says
+            step, want_jump = controls
+            if self.jump == 0 and grounded and want_jump:
+                self.jump = JUMP_HEIGHT
+                if not is_solid(world, self.x, self.y - 1):
+                    self.y -= 1
+                    self.jump -= 1
+                    self.grab_coin(world, game)
+            if step and not is_solid(world, self.x + step, self.y):
+                self.x += step
+                self.grab_coin(world, game)
+            return self.result()
+
+        # On the ground: look ahead first and decide whether to jump
         if self.jump == 0 and grounded:
             bird_near = any(0 <= b.x - self.x <= 4 for b in birds)
             if self.danger_ahead(world, walkers):
@@ -354,8 +435,24 @@ def flag_finish(sense, world, hero, walkers, birds, game):
         time.sleep(0.1)
 
 
-def play_level(sense, level, game):
-    """Play one level. Returns True when the flag is reached, False on game over."""
+def read_controls(stick, game):
+    """Read the joystick. Returns the hero's controls, None for the computer, or
+    "start" when someone touches the joystick during the demo."""
+    pressed = stick.read()
+    if not game["human"]:
+        return "start" if pressed else None
+    if stick.idle():                     # Player walked away: computer takes over
+        game["human"] = False
+        return None
+    step = (("right" in stick.held or "right" in pressed)
+            - ("left" in stick.held or "left" in pressed))
+    jump = any(k in pressed or k in stick.held for k in ("up", "middle"))
+    return step, jump
+
+
+def play_level(sense, level, game, stick):
+    """Play one level. Returns True when the flag is reached, False on game over,
+    or "start" when someone touches the joystick during the demo."""
     world, walkers = generate_level(level)
     birds = []
     hero = Hero(2)
@@ -366,7 +463,10 @@ def play_level(sense, level, game):
 
     while time.monotonic() - start < LEVEL_TIMEOUT:
         tick += 1
-        result = hero.update(world, walkers, birds, game)
+        controls = read_controls(stick, game)
+        if controls == "start":
+            return "start"
+        result = hero.update(world, walkers, birds, game, controls)
 
         for walker in walkers:
             walker.update(world)
@@ -398,7 +498,7 @@ def play_level(sense, level, game):
 
         time.sleep(TICK)
 
-    return play_level(sense, level, game)   # Stuck: try this level again
+    return play_level(sense, level, game, stick)   # Stuck: try this level again
 
 
 def game_over(sense, game):
@@ -412,16 +512,28 @@ def game_over(sense, game):
 
 def main():
     sense = init(hat)
+    stick = Joystick(sense)
+    human = False
     while True:
-        game = {"lives": LIVES, "score": 0}
+        game = {"lives": LIVES, "score": 0, "human": human}
         level = 1
         show_lives(sense, game["lives"])
         while True:
             sense.show_message(f"L{level}", text_colour=COIN, scroll_speed=0.06)
-            if not play_level(sense, level, game):
+            result = play_level(sense, level, game, stick)
+            if result is not True:
                 break
             level += 1
+
+        if result == "start":           # Someone grabbed the joystick: new game, you play
+            show_play_sign(sense)
+            stick.flush()
+            human = True
+            continue
+
         game_over(sense, game)
+        human = False                   # Back to the demo; touch the joystick to play again
+        stick.flush()
         time.sleep(1)
 
 

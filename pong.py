@@ -6,6 +6,10 @@ Where the ball hits the paddle decides its angle: the top edge sends it up,
 the middle straight back, the bottom edge down. The players predict where
 the ball will arrive, but now and then they misjudge it. After every point
 the score is shown; the winner's side lights up at the end of a game.
+
+The computer plays both sides until you touch the joystick: then you play the
+left paddle with up and down. After the match, or when you leave the joystick
+alone for a while, the computer takes over again.
 """
 import atexit
 import os
@@ -79,6 +83,66 @@ def run(main):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Joystick: the computer plays a demo until someone touches the joystick
+# ---------------------------------------------------------------------------
+IDLE_TIMEOUT = 30   # Seconds without joystick input before the computer takes over again
+
+PLAY_SIGN = [
+    "..#.....",
+    "..##....",
+    "..###...",
+    "..####..",
+    "..####..",
+    "..###...",
+    "..##....",
+    "..#.....",
+]
+
+
+class Joystick:
+    """Keeps track of the Sense HAT joystick (or the emulator's: arrow keys + Enter)."""
+
+    def __init__(self, sense):
+        self.sense = sense
+        self.held = set()        # Directions held down right now
+        self.last_input = 0.0
+
+    def read(self):
+        """Return the directions pressed since the last call ("up", "left", "middle", ...)."""
+        pressed = []
+        try:
+            events = self.sense.stick.get_events()
+        except (AttributeError, OSError):
+            return pressed
+        for event in events:
+            self.last_input = time.monotonic()
+            if event.action == "pressed":
+                pressed.append(event.direction)
+                self.held.add(event.direction)
+            elif event.action == "held":
+                self.held.add(event.direction)
+            elif event.action == "released":
+                self.held.discard(event.direction)
+        return pressed
+
+    def idle(self):
+        """True when nobody touched the joystick for IDLE_TIMEOUT seconds."""
+        return time.monotonic() - self.last_input > IDLE_TIMEOUT
+
+    def flush(self):
+        """Forget presses that are still waiting, e.g. during a game-over message."""
+        self.read()
+        self.held.clear()
+
+
+def show_play_sign(sense):
+    """A green play symbol: you're in control now."""
+    sense.set_pixels([(0, 255, 0) if c == "#" else (0, 0, 0) for row in PLAY_SIGN for c in row])
+    time.sleep(0.8)
+# ---------------------------------------------------------------------------
+
+
 SIZE = 8
 PADDLE_HEIGHT = 3
 WIN_SCORE = 5
@@ -116,6 +180,7 @@ class Player:
         self.top = 2              # Top row of the paddle
         self.target = 2
         self.score = 0
+        self.human = False        # True: moved with the joystick
 
     def covers(self, y):
         return self.top <= y < self.top + PADDLE_HEIGHT
@@ -134,7 +199,10 @@ class Player:
         """Ball is going away: drift back to the middle."""
         self.target = 2 if self.top <= 2 else 3
 
-    def move(self):
+    def move(self, joystick_move=0):
+        if self.human:
+            self.top = max(0, min(SIZE - PADDLE_HEIGHT, self.top + joystick_move))
+            return
         self.target = max(0, min(SIZE - PADDLE_HEIGHT, self.target))
         if self.top < self.target:
             self.top += 1
@@ -196,8 +264,9 @@ def celebrate(sense, winner):
         time.sleep(0.25)
 
 
-def play_point(sense, left, right, direction):
-    """Play one rally. Returns the player who scored."""
+def play_point(sense, left, right, direction, stick):
+    """Play one rally. Returns the player who scored, or "start" when someone
+    touches the joystick during the demo."""
     ball = Ball(direction)
     players = {-1: left, 1: right}
     players[ball.dx].aim(ball.arrival())
@@ -206,13 +275,30 @@ def play_point(sense, left, right, direction):
     time.sleep(0.6)   # Short pause before the serve
 
     ball_timer = paddle_timer = 0.0
+    joystick_move = 0
     while True:
+        pressed = stick.read()
+        if pressed and not left.human:
+            return "start"
+        if left.human:
+            if stick.idle():                    # Player walked away: computer takes over
+                left.human = False
+                if ball.dx < 0:
+                    left.aim(ball.arrival())
+                else:
+                    left.relax()
+            for key in pressed:                 # Quick taps between paddle moves count too
+                joystick_move = {"up": -1, "down": 1}.get(key, joystick_move)
+
         changed = False
         paddle_timer += TICK
         if paddle_timer >= PADDLE_DELAY - 1e-9:
             paddle_timer = 0.0
-            left.move()
+            if not joystick_move:
+                joystick_move = ("down" in stick.held) - ("up" in stick.held)
+            left.move(joystick_move)
             right.move()
+            joystick_move = 0
             changed = True
 
         ball_timer += TICK
@@ -252,22 +338,37 @@ def play_point(sense, left, right, direction):
 
 def main():
     sense = init(hat)
+    stick = Joystick(sense)
+    human = False
     while True:
         left = Player(0, LEFT_SKILL)
         right = Player(SIZE - 1, RIGHT_SKILL)
+        left.human = human
         direction = random.choice([-1, 1])
 
+        started = False
         while max(left.score, right.score) < WIN_SCORE:
-            scorer = play_point(sense, left, right, direction)
+            scorer = play_point(sense, left, right, direction, stick)
+            if scorer == "start":
+                started = True
+                break
             scorer.score += 1
             direction = -1 if scorer is right else 1   # Serve to whoever lost the point
             show_score(sense, left, right)
             time.sleep(1.2)
 
+        if started:                     # Someone grabbed the joystick: new match, you play left
+            show_play_sign(sense)
+            stick.flush()
+            human = True
+            continue
+
         winner = left if left.score > right.score else right
         show_score(sense, left, right, winner)
         time.sleep(1.5)
         celebrate(sense, winner)
+        human = False                   # Back to the demo; touch the joystick to play again
+        stick.flush()
 
 
 if __name__ == "__main__":

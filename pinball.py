@@ -15,9 +15,14 @@ On the playfield:
   - long flippers with a 2-pixel gap in the middle; the AI sometimes catches
     the ball, lets it settle and then aims at the ramp, bumpers or lanes
 
-Controls (optional, it plays itself):
+The computer plays a demo until you touch the joystick: then you play a new
+game of 3 balls yourself. After game over, or when you leave the joystick
+alone for a while, the computer takes over again.
+
+Controls:
+  joystick left/right   -> left/right flipper (hold to keep it up)
+  joystick up/down      -> "tilt": nudge the balls
   press joystick        -> toggle between follow camera and overview
-  joystick left/right   -> "tilt": nudge the balls
   Ctrl+C                -> quit
 
 Run:  python3 pinball.py
@@ -92,6 +97,66 @@ def run(main):
         main()
     except KeyboardInterrupt:
         pass
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Joystick: the computer plays a demo until someone touches the joystick
+# ---------------------------------------------------------------------------
+IDLE_TIMEOUT = 30   # Seconds without joystick input before the computer takes over again
+
+PLAY_SIGN = [
+    "..#.....",
+    "..##....",
+    "..###...",
+    "..####..",
+    "..####..",
+    "..###...",
+    "..##....",
+    "..#.....",
+]
+
+
+class Joystick:
+    """Keeps track of the Sense HAT joystick (or the emulator's: arrow keys + Enter)."""
+
+    def __init__(self, sense):
+        self.sense = sense
+        self.held = set()        # Directions held down right now
+        self.last_input = 0.0
+
+    def read(self):
+        """Return the directions pressed since the last call ("up", "left", "middle", ...)."""
+        pressed = []
+        try:
+            events = self.sense.stick.get_events()
+        except (AttributeError, OSError):
+            return pressed
+        for event in events:
+            self.last_input = time.monotonic()
+            if event.action == "pressed":
+                pressed.append(event.direction)
+                self.held.add(event.direction)
+            elif event.action == "held":
+                self.held.add(event.direction)
+            elif event.action == "released":
+                self.held.discard(event.direction)
+        return pressed
+
+    def idle(self):
+        """True when nobody touched the joystick for IDLE_TIMEOUT seconds."""
+        return time.monotonic() - self.last_input > IDLE_TIMEOUT
+
+    def flush(self):
+        """Forget presses that are still waiting, e.g. during a game-over message."""
+        self.read()
+        self.held.clear()
+
+
+def show_play_sign(sense):
+    """A green play symbol: you're in control now."""
+    sense.set_pixels([(0, 255, 0) if c == "#" else (0, 0, 0) for row in PLAY_SIGN for c in row])
+    time.sleep(0.8)
 # ---------------------------------------------------------------------------
 
 
@@ -329,6 +394,8 @@ class Pinball:
         self.balls_left = BALLS_PER_GAME
         self.cam = 8.0
         self.overview = False
+        self.stick = Joystick(sense)
+        self.human = False            # True: you play the flippers
 
     # ---------- AI ----------
     def ai(self):
@@ -655,7 +722,8 @@ class Pinball:
                 self.launch_queue.pop(0)
                 self.balls.append(Ball())
 
-        self.ai()
+        if not self.human:
+            self.ai()
         for _ in range(SUB):
             # move the flippers in substeps too, otherwise the ball can pass through them
             for f in self.flippers:
@@ -784,15 +852,47 @@ class Pinball:
 
     # ---------- joystick ----------
     def handle_input(self):
-        for e in self.sense.stick.get_events():
-            if e.action != "pressed":
-                continue
-            if e.direction == "middle":
+        pressed = self.stick.read()
+        if not self.human:
+            if pressed:
+                self.start_player_game()
+            return
+        if self.stick.idle():                 # Player walked away: computer takes over
+            self.human = False
+            return
+        for key in pressed:
+            if key == "left":
+                self.left.flip(force=True)
+            elif key == "right":
+                self.right.flip(force=True)
+            elif key in ("up", "down"):
+                self.nudge(random.choice([-1, 1]))
+            elif key == "middle":
                 self.overview = not self.overview
-            elif e.direction == "left":
-                self.nudge(-1)
-            elif e.direction == "right":
-                self.nudge(+1)
+        # Keep a flipper up for as long as its direction is held
+        for key, f in (("left", self.left), ("right", self.right)):
+            if key in self.stick.held:
+                f.timer = max(f.timer, 0.08)
+
+    def new_game(self):
+        self.score = 0
+        self.balls_left = BALLS_PER_GAME
+        self.lane_lit = [False] * len(TOP_LANES)
+        self.ramp_count = 0
+        self.multiball = False
+        self.ball_save = 0.0
+        self.launch_queue = []
+        for f in self.flippers:
+            f.release()
+        self.balls = [Ball()]
+        self.cam = 8.0
+
+    def start_player_game(self):
+        show_play_sign(self.sense)
+        self.stick.flush()
+        self.human = True
+        self.overview = False
+        self.new_game()
 
     # ---------- game flow ----------
     def ball_lost(self):
@@ -803,13 +903,12 @@ class Pinball:
         if self.balls_left <= 0:
             self.sense.show_message(f"Score {self.score}", scroll_speed=0.06,
                                     text_colour=[255, 200, 0])
-            self.score = 0
-            self.balls_left = BALLS_PER_GAME
-            self.lane_lit = [False] * len(TOP_LANES)
-            self.ramp_count = 0
-        else:
-            self.sense.show_letter(str(self.balls_left), text_colour=[0, 150, 255])
-            time.sleep(0.8)
+            self.new_game()
+            self.human = False        # Back to the demo; touch the joystick to play again
+            self.stick.flush()
+            return
+        self.sense.show_letter(str(self.balls_left), text_colour=[0, 150, 255])
+        time.sleep(0.8)
         for f in self.flippers:
             f.release()
         self.multiball = False

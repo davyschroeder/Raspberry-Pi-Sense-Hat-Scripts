@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Sense HAT – Snake: a computer-controlled snake hunts for food until it crashes."""
+"""Sense HAT – Snake: a snake hunts for food until it crashes.
+
+The computer plays a demo until you touch the joystick: then it's your turn.
+Steer with the joystick; after game over the demo starts again.
+"""
 import atexit
 import os
 import random
@@ -72,6 +76,66 @@ def run(main):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Joystick: the computer plays a demo until someone touches the joystick
+# ---------------------------------------------------------------------------
+IDLE_TIMEOUT = 30   # Seconds without joystick input before the computer takes over again
+
+PLAY_SIGN = [
+    "..#.....",
+    "..##....",
+    "..###...",
+    "..####..",
+    "..####..",
+    "..###...",
+    "..##....",
+    "..#.....",
+]
+
+
+class Joystick:
+    """Keeps track of the Sense HAT joystick (or the emulator's: arrow keys + Enter)."""
+
+    def __init__(self, sense):
+        self.sense = sense
+        self.held = set()        # Directions held down right now
+        self.last_input = 0.0
+
+    def read(self):
+        """Return the directions pressed since the last call ("up", "left", "middle", ...)."""
+        pressed = []
+        try:
+            events = self.sense.stick.get_events()
+        except (AttributeError, OSError):
+            return pressed
+        for event in events:
+            self.last_input = time.monotonic()
+            if event.action == "pressed":
+                pressed.append(event.direction)
+                self.held.add(event.direction)
+            elif event.action == "held":
+                self.held.add(event.direction)
+            elif event.action == "released":
+                self.held.discard(event.direction)
+        return pressed
+
+    def idle(self):
+        """True when nobody touched the joystick for IDLE_TIMEOUT seconds."""
+        return time.monotonic() - self.last_input > IDLE_TIMEOUT
+
+    def flush(self):
+        """Forget presses that are still waiting, e.g. during a game-over message."""
+        self.read()
+        self.held.clear()
+
+
+def show_play_sign(sense):
+    """A green play symbol: you're in control now."""
+    sense.set_pixels([(0, 255, 0) if c == "#" else (0, 0, 0) for row in PLAY_SIGN for c in row])
+    time.sleep(0.8)
+# ---------------------------------------------------------------------------
+
+
 SNAKE_COLOR = (0, 255, 0)
 HEAD_COLOR = (150, 255, 150)   # A lighter green, so you can see where the snake is going
 RIP_COLOR = (255, 0, 0)
@@ -89,6 +153,8 @@ FOOD_COLORS = [
 OFF = (0, 0, 0)
 STEP_DELAY = 0.3
 DIRECTIONS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+KEYS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+WAIT_STEP = 0.02   # Check the joystick this often while waiting for the next step
 
 
 def place_food(snake):
@@ -135,39 +201,75 @@ def draw(sense, snake, food, food_color):
     sense.set_pixels(flatten(frame))
 
 
-def play_game(sense):
-    """Play one game. Returns True if the snake filled the board."""
+def wait_for_next_step(stick, human, direction, wanted):
+    """Wait STEP_DELAY seconds while listening to the joystick.
+
+    Returns the direction the player wants next, or "start" if someone touched
+    the joystick during the demo.
+    """
+    for _ in range(int(STEP_DELAY / WAIT_STEP)):
+        for key in stick.read():
+            if not human:
+                return "start"
+            new = KEYS.get(key)
+            if new and new != (-direction[0], -direction[1]):   # No turning back into yourself
+                wanted = new
+        time.sleep(WAIT_STEP)
+    return wanted
+
+
+def play_game(sense, stick, human):
+    """Play one game. Returns (result, score); result is "won", "lost" or "start"
+    (someone touched the joystick during the demo). The score is the food eaten."""
     snake = [(3, 4), (3, 3), (3, 2)]
     direction = (1, 0)
+    wanted = direction
     food = place_food(snake)
     food_color = new_food_color()
+    draw(sense, snake, food, food_color)
 
     while True:
-        direction = choose_direction(snake, food, direction)
+        wanted = wait_for_next_step(stick, human, direction, wanted)
+        if wanted == "start":
+            return "start", 0
+        direction = wanted if human else choose_direction(snake, food, direction)
         head = (snake[0][0] + direction[0], snake[0][1] + direction[1])
         if is_blocked(head, snake):
-            return False
+            return "lost", len(snake) - 3
 
         snake.insert(0, head)
         if head == food:
             food = place_food(snake)
             food_color = new_food_color(food_color)
             if food is None:
-                return True
+                return "won", len(snake) - 3
         else:
             snake.pop()
 
         draw(sense, snake, food, food_color)
-        time.sleep(STEP_DELAY)
 
 
 def main():
     sense = init(hat)
+    stick = Joystick(sense)
+    human = False
     while True:
-        if play_game(sense):
+        result, score = play_game(sense, stick, human)
+        if result == "start":
+            show_play_sign(sense)
+            stick.flush()
+            human = True
+            continue
+
+        if result == "won":
             sense.show_message("WIN", text_colour=SNAKE_COLOR, scroll_speed=0.07)
         else:
             sense.show_message("RIP", text_colour=RIP_COLOR, scroll_speed=0.07)
+        if human:
+            sense.show_message(f"Score {score}", text_colour=HEAD_COLOR,
+                               scroll_speed=0.07)
+        human = False   # Back to the demo; touch the joystick to play again
+        stick.flush()
         time.sleep(1)
 
 

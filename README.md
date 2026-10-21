@@ -1,7 +1,9 @@
 # Sense HAT Scripts
 
-Little animations and self-playing games for the 8×8 LED matrix of the
+Little animations and games for the 8×8 LED matrix of the
 [Raspberry Pi Sense HAT](https://www.raspberrypi.com/products/sense-hat/).
+
+### Animations
 
 | Script | What it shows |
 | --- | --- |
@@ -9,10 +11,23 @@ Little animations and self-playing games for the 8×8 LED matrix of the
 | `cpu_temp.py` | The Pi's CPU temperature as two digits plus a bar, green to red. A wild flame flares up when it runs hot; a happy ^_^ face pops up when it stays cool |
 | `firefly.py` | Softly coloured fireflies drifting and glowing in the dark |
 | `matrix.py` | Green "Matrix" code rain with the odd flicker |
-| `pinball.py` | A self-playing pinball table twice as tall as the display, with a camera following the ball: pop bumpers, slingshots, top lanes, a ramp and multiball |
+
+### Games
+
+| Script | What it is |
+| --- | --- |
+| `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains, in the style of Tetris Attack |
+| `breakout.py` | Smash all the bricks with a ball and paddle, level after level |
+| `frogger.py` | Get the frog across the road and over the river on the logs into its 4 homes |
+| `pinball.py` | A pinball table twice as tall as the display, with a camera following the ball: pop bumpers, slingshots, top lanes, a ramp and multiball |
 | `platformer.py` | A tiny hero with 3 lives runs through ever harder levels: pits, pipes, coins, enemies and birds |
-| `pong.py` | Two computer players play Pong to 5 points, with angled shots and a ball that speeds up |
-| `snake.py` | A computer-controlled snake hunting for food that changes colour every time |
+| `pong.py` | Pong to 5 points, with angled shots and a ball that speeds up |
+| `snake.py` | A snake hunting for food that changes colour every time |
+| `space_invaders.py` | Shoot the marching invaders before they land, hide behind the shields and catch the saucer |
+| `tetris.py` | Classic falling blocks in an 8×8 well |
+
+Every game starts as a demo in which the computer plays, until you grab the
+joystick: see [Playing the games yourself](#playing-the-games-yourself).
 
 ## Requirements
 
@@ -46,14 +61,27 @@ Stop a script with **Ctrl+C**; the LEDs switch off on exit.
 Starting a script automatically stops any other script from this folder that
 is still running, so you can simply switch from one animation to the next.
 
-### Pinball joystick
+### Playing the games yourself
 
-`pinball.py` plays by itself, but you can join in with the Sense HAT joystick:
+Every game starts as a demo in which the computer plays. Touch the Sense HAT
+joystick and a green play sign appears: now you're in control. After game over,
+or when you leave the joystick alone for 30 seconds, the computer takes over
+again.
 
-| Joystick | Action |
+| Game | Controls |
 | --- | --- |
-| Press | Switch between the follow camera and an overview of the whole table |
-| Left / right | Tilt the table to nudge the balls |
+| `block_attack.py` | Move the 2-block cursor with the joystick, press to swap the two blocks |
+| `breakout.py` | Left / right to move the paddle |
+| `frogger.py` | Push the joystick to hop up, down, left or right |
+| `pinball.py` | Left / right for the flippers (hold to keep them up), up / down to tilt, press to switch between the follow camera and an overview of the whole table |
+| `platformer.py` | Left / right to run, up or press to jump |
+| `pong.py` | Up / down to move the left paddle; the computer plays right |
+| `snake.py` | Joystick in any direction to steer |
+| `space_invaders.py` | Left / right to move, up or press to fire |
+| `tetris.py` | Left / right to move, up to rotate, down to drop faster, press to drop straight down |
+
+In the emulator, use the joystick in the emulator window or the arrow keys and
+Enter while that window is focused.
 
 ### Display rotation
 
