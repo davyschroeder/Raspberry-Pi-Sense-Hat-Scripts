@@ -89,10 +89,10 @@ sudo systemctl enable --now sensehat.service
 
 ## How it's organised
 
-Each script imports `SenseHat` from `sense_hat` itself (falling back to
-`sense_emu`) and hands it to `init()` in `common.py`. That shared helper stops
-other running scripts from this folder, sets the rotation and clears the
-display on exit (Ctrl+C or `SIGTERM`). Keep `common.py` next to the scripts.
+Every script is self-contained: grab a single file and run it, nothing else
+needed. At the top of each script is the same small setup block, which picks
+the real Sense HAT or the emulator, stops other running scripts from the same
+folder, sets the rotation and clears the display on exit (Ctrl+C or `SIGTERM`).
 
 ## License
 

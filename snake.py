@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Sense HAT – Snake: a computer-controlled snake hunts for food until it crashes."""
+import atexit
+import os
 import random
+import signal
+import sys
 import time
 
 try:
@@ -10,9 +14,66 @@ except (ImportError, OSError):  # No Sense HAT library or board found: use the e
     from sense_emu import SenseHat
     hat = SenseHat()
 
-from common import flatten, init, run
+
+# ---------------------------------------------------------------------------
+# Sense HAT setup (the same in every script of this collection)
+# ---------------------------------------------------------------------------
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+
+def stop_other_scripts():
+    """Stop any other script from this folder that is still driving the LEDs."""
+    me = os.getpid()
+    stopped = False
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == me:
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as f:
+                args = [a.decode(errors="ignore") for a in f.read().split(b"\0") if a]
+            cwd = os.readlink(f"/proc/{entry}/cwd")
+        except OSError:
+            continue
+        if not args or "python" not in os.path.basename(args[0]):
+            continue
+        script = next((a for a in args[1:] if a.endswith(".py")), None)
+        if script and os.path.dirname(os.path.realpath(os.path.join(cwd, script))) == SCRIPT_DIR:
+            try:
+                os.kill(int(entry), signal.SIGTERM)
+                stopped = True
+            except OSError:
+                pass  # Already gone, or owned by another user
+    if stopped:
+        time.sleep(0.2)  # Let the old script clear the display before we draw
+
+
+def init(sense, rotation=0):
+    """Prepare the Sense HAT: stop other scripts, set the rotation (override with
+    the SENSE_HAT_ROTATION environment variable) and clear the LEDs on exit."""
+    stop_other_scripts()
+    sense.set_rotation(int(os.environ.get("SENSE_HAT_ROTATION", rotation)))
+    sense.clear()
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+    atexit.register(sense.clear)
+    return sense
+
+
+def flatten(frame):
+    """Turn an 8x8 list of rows into the flat 64-pixel list set_pixels() wants."""
+    return [pixel for row in frame for pixel in row]
+
+
+def run(main):
+    """Run the main loop and exit quietly on Ctrl+C."""
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+# ---------------------------------------------------------------------------
+
 
 SNAKE_COLOR = (0, 255, 0)
+HEAD_COLOR = (150, 255, 150)   # A lighter green, so you can see where the snake is going
 RIP_COLOR = (255, 0, 0)
 # Every new piece of food gets a different colour from this list
 FOOD_COLORS = [
@@ -65,8 +126,10 @@ def new_food_color(previous=None):
 
 def draw(sense, snake, food, food_color):
     frame = [[OFF] * 8 for _ in range(8)]
-    for x, y in snake:
+    for x, y in snake[1:]:
         frame[y][x] = SNAKE_COLOR
+    head_x, head_y = snake[0]
+    frame[head_y][head_x] = HEAD_COLOR
     if food:
         frame[food[1]][food[0]] = food_color
     sense.set_pixels(flatten(frame))

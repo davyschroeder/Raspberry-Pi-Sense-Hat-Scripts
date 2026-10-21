@@ -5,11 +5,16 @@ The colour runs from green (40 °C or cooler) to red (75 °C or hotter),
 and the bar along the bottom row fills up over the same range.
 
 Now and then the display reacts to the temperature: when the Pi runs hot,
-flames flare up for a moment; when it stays nice and cool, a happy
-Japanese-style ^_^ face pops up and wiggles.
+a wild flame flares up, shaking and throwing sparks; when it stays nice and
+cool, a happy Japanese-style ^_^ face bounces, winks, grins and turns into
+a beating heart.
 """
+import atexit
+import os
 import random
+import signal
 import subprocess
+import sys
 import time
 
 try:
@@ -19,7 +24,63 @@ except (ImportError, OSError):  # No Sense HAT library or board found: use the e
     from sense_emu import SenseHat
     hat = SenseHat()
 
-from common import flatten, init, run
+
+# ---------------------------------------------------------------------------
+# Sense HAT setup (the same in every script of this collection)
+# ---------------------------------------------------------------------------
+SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+
+
+def stop_other_scripts():
+    """Stop any other script from this folder that is still driving the LEDs."""
+    me = os.getpid()
+    stopped = False
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit() or int(entry) == me:
+            continue
+        try:
+            with open(f"/proc/{entry}/cmdline", "rb") as f:
+                args = [a.decode(errors="ignore") for a in f.read().split(b"\0") if a]
+            cwd = os.readlink(f"/proc/{entry}/cwd")
+        except OSError:
+            continue
+        if not args or "python" not in os.path.basename(args[0]):
+            continue
+        script = next((a for a in args[1:] if a.endswith(".py")), None)
+        if script and os.path.dirname(os.path.realpath(os.path.join(cwd, script))) == SCRIPT_DIR:
+            try:
+                os.kill(int(entry), signal.SIGTERM)
+                stopped = True
+            except OSError:
+                pass  # Already gone, or owned by another user
+    if stopped:
+        time.sleep(0.2)  # Let the old script clear the display before we draw
+
+
+def init(sense, rotation=0):
+    """Prepare the Sense HAT: stop other scripts, set the rotation (override with
+    the SENSE_HAT_ROTATION environment variable) and clear the LEDs on exit."""
+    stop_other_scripts()
+    sense.set_rotation(int(os.environ.get("SENSE_HAT_ROTATION", rotation)))
+    sense.clear()
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(0))
+    atexit.register(sense.clear)
+    return sense
+
+
+def flatten(frame):
+    """Turn an 8x8 list of rows into the flat 64-pixel list set_pixels() wants."""
+    return [pixel for row in frame for pixel in row]
+
+
+def run(main):
+    """Run the main loop and exit quietly on Ctrl+C."""
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
+# ---------------------------------------------------------------------------
+
 
 TEMP_MIN = 40   # °C: fully green, empty bar
 TEMP_MAX = 75   # °C: fully red, full bar
