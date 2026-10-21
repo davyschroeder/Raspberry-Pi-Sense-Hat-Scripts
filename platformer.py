@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Sense HAT – Platformer: a little red hero runs through random levels by itself.
 
-Watch the hero jump over pipes and pits, grab coins, stomp walking enemies
+Under a light blue sky with clouds drifting by in the background, watch the
+hero jump over pipes and pits, grab coins, stomp walking enemies
 and dodge birds on the way to the flag. The hero has 3 lives and now and
 then reacts a moment too late, so you never know if it will make it.
 Every level is a bit harder than the last. When all lives are gone, the
@@ -144,7 +145,9 @@ def show_play_sign(sense):
 
 
 # Colours
-SKY = (0, 0, 50)
+SKY = (0, 0, 50)              # Marks empty space in the level (drawn as SKY_COL)
+SKY_COL = (30, 100, 230)       # A bright, light blue sky
+CLOUD = (225, 235, 245)        # Little clouds drifting by in the background
 GROUND = (101, 67, 33)
 BLOCK = (150, 90, 40)          # Stairs and floating platforms
 PIPE = (0, 200, 0)
@@ -152,7 +155,7 @@ COIN = (255, 200, 0)
 COIN_DIM = (170, 120, 0)       # Coins twinkle between these two
 HERO = (255, 0, 0)
 ENEMY = (139, 69, 19)
-BIRD = (180, 180, 255)
+BIRD = (30, 30, 90)            # Dark, so birds stand out against the light sky
 FLAG = (255, 255, 255)
 CASTLE = (80, 80, 80)
 LIFE = (255, 0, 0)
@@ -328,7 +331,33 @@ class Hero:
         return None
 
 
+# Small cloud shapes ("#" = cloud) for the background
+CLOUD_SHAPES = [
+    [".##.", "####"],
+    ["##"],
+    [".#..", "####", ".##."],
+    ["###"],
+]
+clouds = [[False] * WORLD_WIDTH for _ in range(3)]   # Background layer: rows 0-2
+
+
+def generate_clouds():
+    """Scatter a few clouds over the background layer, with gaps of clear sky."""
+    global clouds
+    clouds = [[False] * WORLD_WIDTH for _ in range(3)]
+    x = random.randint(0, 6)
+    while x < WORLD_WIDTH - 4:
+        shape = random.choice(CLOUD_SHAPES)
+        top = random.randint(0, 3 - len(shape))
+        for dy, line in enumerate(shape):
+            for dx, mark in enumerate(line):
+                if mark == "#" and x + dx < WORLD_WIDTH:
+                    clouds[top + dy][x + dx] = True
+        x += len(shape[0]) + random.randint(6, 16)
+
+
 def generate_level(level):
+    generate_clouds()
     world = [[SKY] * WORLD_WIDTH for _ in range(8)]
     for x in range(WORLD_WIDTH):
         world[7][x] = GROUND
@@ -383,6 +412,13 @@ def draw(sense, world, hero, walkers, birds, tick):
     camera = max(0, min(WORLD_WIDTH - 8, hero.x - 3))
     coin = COIN if tick % 4 < 2 else COIN_DIM
     frame = [[coin if c == COIN else c for c in row[camera:camera + 8]] for row in world]
+
+    # Light blue sky; the clouds drift by at half speed (parallax), behind everything else
+    for y in range(8):
+        for x in range(8):
+            if frame[y][x] == SKY:
+                cx = x + camera // 2
+                frame[y][x] = CLOUD if y < 3 and clouds[y][cx] else SKY_COL
 
     for enemy in walkers:
         if 0 <= enemy.x - camera < 8:
