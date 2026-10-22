@@ -182,11 +182,12 @@ FLASH = (255, 255, 255)     # Matched blocks flash white before they vanish
 GAME_OVER = (80, 80, 80)    # The stack turns this grey when the game is lost
 
 TICK = 0.02                 # Seconds per game step (50 steps per second)
-RISE_DELAY = 4.5            # Seconds between new rows at the start ...
+RISE_DELAY = 7.0            # Seconds between new rows at the start (a calm start) ...
 RISE_SPEEDUP = 0.98         # ... a little faster with every new row ...
 MIN_RISE_DELAY = 1.0        # ... down to this
 CURSOR_DELAY = 0.12         # Seconds between queued cursor steps
-AI_CURSOR_DELAY = 0.15      # Seconds per cursor step for the computer
+AI_CURSOR_DELAY = 0.28      # Seconds per cursor step for the computer (calm, easy to follow)
+AI_THINK = 0.45             # Seconds the computer pauses on the spot before it swaps
 FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
 AI_LOOKAHEAD = 12           # Set-up swaps the computer looks one move further into
@@ -394,6 +395,7 @@ class Game:
         self.want_move = None       # A cursor step (dx, dy) waiting to be made
         self.ticks = 0              # Game steps so far (used for the cursor blink)
         self.plan = None            # The computer's target swap (x, y), if it has one
+        self.ai_wait = None         # Seconds the computer still waits before swapping
 
     def rise_delay(self):
         """Seconds to wait before the next row comes up.
@@ -425,6 +427,7 @@ class Game:
             self.plan = (self.plan[0], self.plan[1] - 1)
             if self.plan[1] < 0:
                 self.plan = None
+                self.ai_wait = None
         self.rises += 1
         return True
 
@@ -496,9 +499,17 @@ class Game:
             self.plan = self.choose_swap()
         x, y = self.plan
         cx, cy = self.cursor
-        # Arrived: swap, and think of a new target next time
+        # Arrived: (after a short pause) swap, and think of a new target next time
         if (cx, cy) == (x, y):
+            # Pause a moment on the spot first, like a person checking the move,
+            # so the demo is easy to follow
+            if self.ai_wait is None:
+                self.ai_wait = AI_THINK
+            self.ai_wait -= TICK
+            if self.ai_wait > 0:
+                return None, False
             self.plan = None
+            self.ai_wait = None
             return None, True
         # Walk sideways first, then up or down. (x > cx) - (x < cx) is a short way
         # to get 1 (target is to the right), -1 (to the left) or 0 (same column).
