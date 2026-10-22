@@ -186,8 +186,10 @@ RISE_DELAY = 7.0            # Seconds between new rows at the start (a calm star
 RISE_SPEEDUP = 0.98         # ... a little faster with every new row ...
 MIN_RISE_DELAY = 1.0        # ... down to this
 CURSOR_DELAY = 0.12         # Seconds between queued cursor steps
-AI_CURSOR_DELAY = 0.28      # Seconds per cursor step for the computer (calm, easy to follow)
-AI_THINK = 0.45             # Seconds the computer pauses on the spot before it swaps
+AI_CURSOR_DELAY = 0.28      # Seconds per cursor step for the computer at the start (calm) ...
+AI_CURSOR_DELAY_FAST = 0.12 # ... speeding up to this as the stack rises faster
+AI_THINK = 0.45             # Seconds the computer pauses on the spot before it swaps ...
+AI_THINK_FAST = 0.1         # ... shrinking to this later in the game
 FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
 AI_LOOKAHEAD = 12           # Set-up swaps the computer looks one move further into
@@ -397,6 +399,12 @@ class Game:
         self.plan = None            # The computer's target swap (x, y), if it has one
         self.ai_wait = None         # Seconds the computer still waits before swapping
 
+    def ai_pace(self, slow, fast):
+        """A computer timing that keeps up with the game: `slow` at the start,
+        moving towards `fast` as the stack rises faster (fast at full speed)."""
+        progress = (RISE_DELAY - self.rise_delay()) / (RISE_DELAY - MIN_RISE_DELAY)  # 0 .. 1
+        return slow + (fast - slow) * progress
+
     def rise_delay(self):
         """Seconds to wait before the next row comes up.
 
@@ -504,7 +512,7 @@ class Game:
             # Pause a moment on the spot first, like a person checking the move,
             # so the demo is easy to follow
             if self.ai_wait is None:
-                self.ai_wait = AI_THINK
+                self.ai_wait = self.ai_pace(AI_THINK, AI_THINK_FAST)
             self.ai_wait -= TICK
             if self.ai_wait > 0:
                 return None, False
@@ -673,7 +681,7 @@ def play_game(sense, stick, human):
             result = game.step(move, swap, CURSOR_DELAY)
         else:
             move, swap = game.ai_controls()
-            result = game.step(move, swap, AI_CURSOR_DELAY)
+            result = game.step(move, swap, game.ai_pace(AI_CURSOR_DELAY, AI_CURSOR_DELAY_FAST))
 
         # After a swap, play out the falling and clearing; on game over, end the game
         if result == "swap":
