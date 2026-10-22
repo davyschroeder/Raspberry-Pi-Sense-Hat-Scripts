@@ -16,7 +16,7 @@ Little animations and games for the 8×8 LED matrix of the
 
 | Script | What it is |
 | --- | --- |
-| `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains, in the style of Tetris Attack |
+| `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains |
 | `breakout.py` | Smash all the bricks with a ball and paddle, level after level |
 | `frogger.py` | Hop as far up as you can through an endless, ever faster world of roads and rivers that keeps scrolling up. 10 points per row, 50 per fly |
 | `pinball.py` | A pinball table twice as tall as the display, with a camera following the ball: a launch lane, pop bumpers, slingshots, top lanes, a ramp and multiball |
