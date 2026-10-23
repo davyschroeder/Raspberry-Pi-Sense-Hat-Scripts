@@ -296,6 +296,8 @@ AI_CURSOR_DELAY = 0.28      # Seconds per cursor step for the computer at the st
 AI_CURSOR_DELAY_FAST = 0.12 # ... speeding up to this as the stack rises faster
 AI_THINK = 0.45             # Seconds the computer pauses on the spot before it swaps ...
 AI_THINK_FAST = 0.1         # ... shrinking to this later in the game
+AI_PANIC_HEIGHT = 7         # Stack this high (rows): the computer gets a short speed boost ...
+AI_PANIC_SPEED = 0.5        # ... and plays twice as fast as its fastest pace until it's lower
 FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
 AI_LOOKAHEAD = 12           # Set-up swaps the computer looks one move further into
@@ -507,8 +509,12 @@ class Game:
 
     def ai_pace(self, slow, fast):
         """A computer timing that keeps up with the game: `slow` at the start,
-        moving towards `fast` as the stack rises faster (fast at full speed)."""
+        moving towards `fast` as the stack rises faster (fast at full speed).
+        When the stack nearly touches the top it gets a short speed boost."""
         progress = (RISE_DELAY - self.rise_delay()) / (RISE_DELAY - MIN_RISE_DELAY)  # 0 .. 1
+        # Speed boost when the stack is about to reach the top: a burst of quick moves
+        if stack_height(self.grid) >= AI_PANIC_HEIGHT:
+            return fast * AI_PANIC_SPEED
         return slow + (fast - slow) * progress
 
     def rise_delay(self):
