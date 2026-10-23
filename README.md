@@ -17,7 +17,7 @@ Little animations and games for the 8×8 LED matrix of the
 | Script | What it is |
 | --- | --- |
 | `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains |
-| `breakout.py` | Smash all the bricks with a ball and paddle, level after level |
+| `breakout.py` | Smash the bricks with ball and paddle through 8 levels, with silver and gold bricks and power-up capsules (wider paddle, catch, laser, slow, three balls, level exit, extra life) |
 | `frogger.py` | Hop as far up as you can through an endless, ever faster world of roads and rivers that keeps scrolling up. 10 points per row, 50 per fly |
 | `pinball.py` | A pinball table twice as tall as the display, with a camera following the ball: a launch lane, pop bumpers, slingshots, top lanes, a ramp and multiball |
 | `platformer.py` | A tiny hero with 3 lives runs through ever harder levels: pits, pipes, coins, enemies and birds |
@@ -71,7 +71,7 @@ again.
 | Game | Controls |
 | --- | --- |
 | `block_attack.py` | Move the 2-block cursor with the joystick, press to swap the two blocks |
-| `breakout.py` | Left / right to move the paddle |
+| `breakout.py` | Left / right to move the paddle, press to launch the ball or fire the laser |
 | `frogger.py` | Push the joystick to hop up, down, left or right |
 | `pinball.py` | Left / right for the flippers (hold to keep them up), up / down to tilt, press to switch between the follow camera and an overview of the whole table |
 | `platformer.py` | Left / right to run, up or press to jump |
@@ -82,6 +82,19 @@ again.
 
 In the emulator, use the joystick in the emulator window or the arrow keys and
 Enter while that window is focused.
+
+#### With a gamepad
+
+A USB or Bluetooth gamepad works too: the d-pad or the left stick steers, and A, B
+or Start count as pushing the joystick in. In `pinball.py` the shoulder buttons and
+triggers work the flippers. Install the evdev library once:
+
+```bash
+sudo apt install python3-evdev
+```
+
+Plug in (or pair) the gamepad before or while a game runs; it is picked up
+automatically. Without evdev the games simply use the Sense HAT joystick.
 
 ### Display rotation
 

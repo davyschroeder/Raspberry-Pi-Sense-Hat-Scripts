@@ -124,7 +124,8 @@ PLAY_SIGN = [
 
 
 class Joystick:
-    """Keeps track of the Sense HAT joystick (or the emulator's: arrow keys + Enter).
+    """Keeps track of the Sense HAT joystick (or the emulator's: arrow keys + Enter),
+    and of a USB or Bluetooth gamepad if one is connected.
 
     The Sense HAT library reports joystick "events": a direction ("up", "down",
     "left", "right" or "middle" for pushing it in) plus an action ("pressed",
@@ -135,15 +136,118 @@ class Joystick:
     - self.held is the set of directions that are pushed right now (good for
       moving as long as you hold the stick).
 
+    A gamepad works the same way: the d-pad or the left stick steers, and A, B
+    or Start count as pushing the joystick in. Set GAMEPAD_SHOULDERS = True in a
+    game to also use the shoulder buttons and triggers as left and right (the
+    pinball flippers do). Gamepads need the evdev library
+    (sudo apt install python3-evdev); without it only the Sense HAT joystick works.
+
     It also remembers when the joystick was last touched, so the game can tell
     whether the player has walked away (see idle()).
     """
+
+    PAD_RESCAN = 3.0             # Seconds between looks for a newly plugged-in gamepad
 
     def __init__(self, sense):
         """Remember the SenseHat object; nothing is held and no input seen yet."""
         self.sense = sense
         self.held = set()        # Directions held down right now
         self.last_input = 0.0    # time.monotonic() of the last joystick event (0 = never)
+        self.pads = []           # Connected gamepads (evdev devices)
+        self.pad_state = {}      # Per gamepad: which directions it holds right now
+        self.pad_axes = {}       # Per gamepad: latest position of the stick, d-pad and triggers
+        self.next_scan = 0.0     # When to look for gamepads again
+
+    def find_pads(self):
+        """Look for gamepads (once every PAD_RESCAN seconds while none is found)."""
+        if self.pads or time.monotonic() < self.next_scan:
+            return
+        self.next_scan = time.monotonic() + self.PAD_RESCAN
+        try:
+            import evdev
+        except ImportError:
+            self.next_scan = float("inf")          # No evdev library: never look again
+            return
+        for path in evdev.list_devices():
+            try:
+                dev = evdev.InputDevice(path)
+                keys = dev.capabilities().get(evdev.ecodes.EV_KEY, [])
+                if evdev.ecodes.BTN_SOUTH in keys or evdev.ecodes.BTN_GAMEPAD in keys:
+                    self.pads.append(dev)          # Has an A button: it's a gamepad
+                else:
+                    dev.close()
+            except OSError:
+                pass                               # Not allowed to read it, or it went away
+
+    def pad_directions(self, dev):
+        """Which directions this gamepad holds right now, from its buttons and axes."""
+        import evdev
+        e, ax = evdev.ecodes, self.pad_axes.setdefault(dev.path, {})
+        keys = set(dev.active_keys())
+        state = set()
+
+        def stick(code):
+            """Stick position from -1 (left/up) to 1 (right/down)."""
+            if code not in ax:
+                return 0.0
+            info = dev.absinfo(code)
+            mid = (info.max + info.min) / 2
+            return (ax[code] - mid) / max(1, (info.max - info.min) / 2)
+
+        def trigger(code):
+            """How far a trigger is pulled, from 0 to 1."""
+            if code not in ax:
+                return 0.0
+            info = dev.absinfo(code)
+            return (ax[code] - info.min) / max(1, info.max - info.min)
+
+        x = stick(e.ABS_X) + ax.get(e.ABS_HAT0X, 0)   # Left stick plus d-pad (hat: -1, 0 or 1)
+        y = stick(e.ABS_Y) + ax.get(e.ABS_HAT0Y, 0)
+        if x < -0.5 or e.BTN_DPAD_LEFT in keys:
+            state.add("left")
+        if x > 0.5 or e.BTN_DPAD_RIGHT in keys:
+            state.add("right")
+        if y < -0.5 or e.BTN_DPAD_UP in keys:
+            state.add("up")
+        if y > 0.5 or e.BTN_DPAD_DOWN in keys:
+            state.add("down")
+        if keys & {e.BTN_SOUTH, e.BTN_EAST, e.BTN_START}:
+            state.add("middle")
+        if globals().get("GAMEPAD_SHOULDERS"):         # e.g. the pinball flippers
+            if e.BTN_TL in keys or e.BTN_TL2 in keys or trigger(e.ABS_Z) > 0.3:
+                state.add("left")
+            if e.BTN_TR in keys or e.BTN_TR2 in keys or trigger(e.ABS_RZ) > 0.3:
+                state.add("right")
+        return state
+
+    def read_pads(self, pressed):
+        """Turn gamepad changes into joystick presses and releases."""
+        self.find_pads()
+        for dev in list(self.pads):
+            try:
+                import evdev
+                event = dev.read_one()
+                while event is not None:              # Remember the newest axis positions
+                    if event.type == evdev.ecodes.EV_ABS:
+                        self.pad_axes.setdefault(dev.path, {})[event.code] = event.value
+                    event = dev.read_one()
+                now = self.pad_directions(dev)
+            except OSError:                           # Unplugged: forget it
+                self.pads.remove(dev)
+                for d in self.pad_state.pop(dev.path, set()):
+                    self.held.discard(d)
+                continue
+            before = self.pad_state.get(dev.path, set())
+            for d in now - before:                    # Newly pushed
+                pressed.append(d)
+                self.held.add(d)
+                self.last_input = time.monotonic()
+            for d in before - now:                    # Let go
+                self.held.discard(d)
+                self.last_input = time.monotonic()
+            if now:
+                self.last_input = time.monotonic()    # Still holding: still playing
+            self.pad_state[dev.path] = now
 
     def read(self):
         """Return the directions pressed since the last call ("up", "left", "middle", ...).
@@ -152,6 +256,7 @@ class Joystick:
         list when there is no joystick to read (for example a broken connection).
         """
         pressed = []
+        self.read_pads(pressed)
         # Fetch all events that queued up since the last call
         try:
             events = self.sense.stick.get_events()
@@ -179,6 +284,7 @@ class Joystick:
         self.held.clear()
 
 
+
 def show_play_sign(sense):
     """A green play symbol: you're in control now.
 
@@ -196,6 +302,7 @@ def show_play_sign(sense):
 # the top of the table, y=16 the bottom where balls drain).
 W, H = 8, 16            # playfield
 FPS = 30                # frames (screen updates) per second
+GAMEPAD_SHOULDERS = True   # Gamepad: shoulder buttons and triggers work the flippers
 DT = 1.0 / FPS          # seconds per frame
 SUB = 4                 # physics substeps per frame (prevents tunnelling through walls)
 GRAVITY = 9.0           # cells / s^2
