@@ -17,8 +17,12 @@ Little animations and games for the 8×8 LED matrix of the
 | Script | What it is |
 | --- | --- |
 | `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains |
+| `bomberman.py` | Drop bombs to blow up bricks and monsters, collect power-ups and find the hidden exit, level after level |
 | `breakout.py` | Smash the bricks with ball and paddle through 8 levels, with silver and gold bricks and power-up capsules (wider paddle, catch, laser, slow, three balls, level exit, extra life) |
+| `flappy_bird.py` | Flap through the gaps in the pipes; every 5 points they come faster |
 | `frogger.py` | Hop as far up as you can through an endless, ever faster world of roads and rivers that keeps scrolling up. 10 points per row, 50 per fly |
+| `game_2048.py` | Slide and merge tiles on a 4×4 board of 2×2-pixel tiles, every value in its own colour, all the way to 2048 |
+| `missile_command.py` | Shoot down the missiles before they hit your four cities, with chain-reaction fireballs and splitting missiles |
 | `pinball.py` | A pinball table twice as tall as the display, with a camera following the ball: a launch lane, pop bumpers, slingshots, top lanes, a ramp and multiball |
 | `platformer.py` | A tiny hero with 3 lives runs through ever harder levels: pits, pipes, coins, enemies and birds |
 | `pong.py` | Pong to 5 points, with angled shots and a ball that speeds up |
@@ -71,8 +75,12 @@ again.
 | Game | Controls |
 | --- | --- |
 | `block_attack.py` | Move the 2-block cursor with the joystick, press to swap the two blocks |
+| `bomberman.py` | Push the joystick to walk, press to drop a bomb |
 | `breakout.py` | Left / right to move the paddle, press to launch the ball or fire the laser |
+| `flappy_bird.py` | Push the joystick any way (or press it) to flap |
 | `frogger.py` | Push the joystick to hop up, down, left or right |
+| `game_2048.py` | Push the joystick up, down, left or right to slide the tiles |
+| `missile_command.py` | Move the crosshair with the joystick, press to fire |
 | `pinball.py` | Left / right for the flippers (hold to keep them up), up / down to tilt, press to switch between the follow camera and an overview of the whole table |
 | `platformer.py` | Left / right to run, up or press to jump |
 | `pong.py` | Up / down to move the left paddle; the computer plays right |
