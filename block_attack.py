@@ -302,6 +302,7 @@ FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
 AI_LOOKAHEAD = 12           # Set-up swaps the computer looks one move further into
 AI_SETUP_WEIGHT = 0.7      # How much a set-up for the next swap is worth now
+AI_SLIDE_COST = 8           # A slide (one block moved several places along its row) costs this per extra swap
 # (AI = "artificial intelligence", here simply: the computer player. A higher
 # AI_SLOPPY makes it play worse and more human; a higher AI_LOOKAHEAD makes it
 # smarter but slower to think.)
@@ -463,6 +464,44 @@ def swap_options(grid):
             yield x, y, after, points, chains, biggest
 
 
+def slide_options(grid):
+    """Every useful slide: one block moved 2 to 7 places along its row, swap by swap.
+
+    Yields (swaps, grid after the last swap has settled, points, chains, biggest),
+    where swaps is the list of cursor spots (x, y), one per swap, in order.
+
+    Sometimes the right block is in the right row but too far away: one swap
+    doesn't do it, but moving it a few places does, such as a purple block
+    sliding to the far left to drop into a purple column. A slide only counts
+    when every swap before the last one clears nothing and the block stays in
+    its row (it doesn't fall into a hole on the way), so the plan still works
+    out when the computer makes the swaps one by one.
+    """
+    for y in range(8):
+        for x in range(8):
+            if grid[y][x] is None:
+                continue
+            for d in (-1, 1):                    # slide to the left or to the right
+                g = [row[:] for row in grid]
+                bx, swaps = x, []
+                while 0 <= bx + d <= 7:
+                    if g[y][bx + d] == g[y][bx]:
+                        break                    # same colour next to it: swapping changes nothing
+                    left = min(bx, bx + d)       # the cursor's left cell for this swap
+                    g[y][bx], g[y][bx + d] = g[y][bx + d], g[y][bx]
+                    swaps.append((left, y))
+                    bx += d
+                    after = [row[:] for row in g]
+                    points, chains, biggest = settle_points(after)
+                    if points:
+                        if len(swaps) >= 2:      # one swap is already a normal option
+                            yield swaps, after, points, chains, biggest
+                        break                    # something cleared: the slide ends here
+                    if after != g:
+                        break                    # something fell: the block left its row
+                    g = after
+
+
 def swap_value(points, chains, biggest):
     """What the computer likes: points, and extra for chains and matches of more than 3.
 
@@ -505,6 +544,7 @@ class Game:
         self.want_move = None       # A cursor step (dx, dy) waiting to be made
         self.ticks = 0              # Game steps so far (used for the cursor blink)
         self.plan = None            # The computer's target swap (x, y), if it has one
+        self.queue = []             # More swaps to make after that one (for a slide)
         self.ai_wait = None         # Seconds the computer still waits before swapping
 
     def ai_pace(self, slow, fast):
@@ -548,6 +588,7 @@ class Game:
             if self.plan[1] < 0:
                 self.plan = None
                 self.ai_wait = None
+        self.queue = [(x, y - 1) for x, y in self.queue if y > 0]
         self.rises += 1
         return True
 
@@ -564,7 +605,9 @@ class Game:
         or a chain for the next swap.
 
         Returns:
-            (x, y): the left cell of the swap the computer wants to make.
+            A list of swaps to make, in order: each one the left cell (x, y)
+            of the cursor. Usually one swap; more for a slide (see
+            slide_options()).
 
         How it decides: it gives every possible swap a value and picks the
         highest. The value is:
@@ -576,6 +619,8 @@ class Game:
           swaps it takes the nearby one and wastes less time walking;
         - plus a random bit below 1, so equal choices aren't always the same
           and the demo looks more alive.
+        Slides (a block moved several places along its row) are judged the
+        same way, minus AI_SLIDE_COST for every swap after the first.
         """
         height = stack_height(self.grid)
         options = []
@@ -584,13 +629,22 @@ class Game:
             value = (swap_value(points, chains, biggest) - (stack_height(after) - height) * 6
                      - abs(x - self.cursor[0]) * 0.3 - abs(y - self.cursor[1]) * 0.3
                      + random.random())
-            options.append([value, x, y, after, points])
+            options.append([value, x, y, after, points, [(x, y)]])
+        # Slides: one block moved several places along its row to make a match.
+        # Each extra swap costs AI_SLIDE_COST, so a nearby single swap wins a tie.
+        for swaps, after, points, chains, biggest in slide_options(self.grid):
+            x, y = swaps[0]
+            value = (swap_value(points, chains, biggest) - (stack_height(after) - height) * 6
+                     - (len(swaps) - 1) * AI_SLIDE_COST
+                     - abs(x - self.cursor[0]) * 0.3 - abs(y - self.cursor[1]) * 0.3
+                     + random.random())
+            options.append([value, x, y, after, points, swaps])
         # Step 2: look one swap ahead, but only for swaps that score nothing now
         # ("set-ups"). For a random handful of them (AI_LOOKAHEAD, to keep the
         # thinking fast) it tries every swap that could follow, and adds part of
         # the best follow-up's value. A set-up for a big chain can then beat a
         # small match right now.
-        setups = [o for o in options if o[4] == 0]
+        setups = [o for o in options if o[4] == 0 and len(o[5]) == 1]
         random.shuffle(setups)
         for option in setups[:AI_LOOKAHEAD]:
             follow = max((swap_value(p, c, b) for _, _, _, p, c, b in swap_options(option[3])),
@@ -599,10 +653,10 @@ class Game:
         # Step 3: now and then (AI_SLOPPY), or when there is nothing to swap at all,
         # make a random swap somewhere in the lower part of the field instead
         if not options or random.random() < AI_SLOPPY:
-            return random.randint(0, 6), random.randint(3, 7)
+            return [(random.randint(0, 6), random.randint(3, 7))]
         # Otherwise pick the option with the highest value
         best = max(options, key=lambda o: o[0])
-        return best[1], best[2]
+        return best[5]
 
     def ai_controls(self):
         """Returns (move, swap) like the joystick would.
@@ -614,9 +668,11 @@ class Game:
             A tuple (move, swap). move is a step (dx, dy) such as (1, 0) for
             "right", or None for no step; swap is True when it wants to swap now.
         """
-        # No target yet? Think of one
+        # No target yet? Take the next swap of a slide, or think of a new move
         if self.plan is None:
-            self.plan = self.choose_swap()
+            if not self.queue:
+                self.queue = self.choose_swap()
+            self.plan = self.queue.pop(0)
         x, y = self.plan
         cx, cy = self.cursor
         # Arrived: (after a short pause) swap, and think of a new target next time
@@ -783,6 +839,7 @@ def play_game(sense, stick, human):
         if game.human and stick.idle():      # Player walked away: computer takes over
             game.human = False
             game.plan = None
+            game.queue = []
 
         # Decide this step's move and swap: from the joystick, or from the computer.
         # Both go through game.step(); only the cursor speed differs.
