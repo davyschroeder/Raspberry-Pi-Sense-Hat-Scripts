@@ -300,7 +300,8 @@ AI_PANIC_HEIGHT = 7         # Stack this high (rows): the computer gets a short 
 AI_PANIC_SPEED = 0.5        # ... and plays twice as fast as its fastest pace until it's lower
 FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
-AI_LOOKAHEAD = 12           # Set-up swaps the computer looks one move further into
+AI_LOOKAHEAD = 50           # Most promising set-up moves the computer looks one move further into
+AI_THINK_BUDGET = 0.008     # Seconds of thinking per game step, so the game keeps running smoothly
 AI_SETUP_WEIGHT = 0.7      # How much a set-up for the next swap is worth now
 AI_SLIDE_COST = 8           # A slide (one block moved several places along its row) costs this per extra swap
 # (AI = "artificial intelligence", here simply: the computer player. A higher
@@ -326,16 +327,17 @@ def find_matches(grid):
     """
     found = set()
     for y in range(8):
-        for x in range(8):
+        for x in range(6):
             color = grid[y][x]
-            if color is None:
-                continue
-            # Same colour in this cell and the next two to the right? (x <= 5 makes
-            # sure x + 2 is still on the 8-wide grid.) Then do the same downward.
-            if x <= 5 and grid[y][x + 1] == color == grid[y][x + 2]:
-                found.update({(x, y), (x + 1, y), (x + 2, y)})
-            if y <= 5 and grid[y + 1][x] == color == grid[y + 2][x]:
-                found.update({(x, y), (x, y + 1), (x, y + 2)})
+            # Same colour in this cell and the next two to the right? Then do the same downward.
+            if color is not None and grid[y][x + 1] == color == grid[y][x + 2]:
+                found.update(((x, y), (x + 1, y), (x + 2, y)))
+    for y in range(6):
+        row, below, below2 = grid[y], grid[y + 1], grid[y + 2]
+        for x in range(8):
+            color = row[x]
+            if color is not None and below[x] == color == below2[x]:
+                found.update(((x, y), (x, y + 1), (x, y + 2)))
     return found
 
 
@@ -407,9 +409,13 @@ def settle_points(grid):
     """
     points = chains = biggest = 0
     while True:
-        # Let everything fall as far as it can (no drawing, so all at once)
-        while fall_one_row(grid):
-            pass
+        # Let everything fall as far as it can (no drawing, so all at once):
+        # in every column, the blocks close up from the bottom
+        for x in range(8):
+            column = [grid[y][x] for y in range(7, -1, -1) if grid[y][x] is not None]
+            column += [None] * (8 - len(column))
+            for i, y in enumerate(range(7, -1, -1)):
+                grid[y][x] = column[i]
         matches = find_matches(grid)
         if not matches:
             return points, chains, biggest
@@ -439,6 +445,31 @@ def stack_height(grid):
     return max((8 - y for y in range(8) for x in range(8) if grid[y][x] is not None), default=0)
 
 
+def quiet_swap(grid, x, y):
+    """After swapping cells (x, y) and (x + 1, y): True when that changed nothing
+    but those two cells, so no block falls and only a line through one of
+    them could be a match. Lets the computer skip the full settle_points()
+    for most swaps, which keeps its thinking fast enough for a Pi."""
+    for cx in (x, x + 1):
+        cell = grid[y][cx]
+        if cell is not None and y < 7 and grid[y + 1][cx] is None:
+            return False                         # a block over a hole: it falls
+        if cell is None and y > 0 and grid[y - 1][cx] is not None:
+            return False                         # a hole under a block: that falls
+        for line in (((1, 0), (-1, 0)), ((0, 1), (0, -1))):
+            if cell is None:
+                break
+            run = 1
+            for dx, dy in line:
+                nx, ny = cx + dx, y + dy
+                while 0 <= nx <= 7 and 0 <= ny <= 7 and grid[ny][nx] == cell:
+                    run += 1
+                    nx, ny = nx + dx, ny + dy
+            if run >= 3:
+                return False                     # a match: needs the full settle
+    return True
+
+
 def swap_options(grid):
     """Every useful swap: yields (x, y, grid after the swap has settled, points, chains, biggest).
 
@@ -460,22 +491,45 @@ def swap_options(grid):
             # row[:] copies a row, so changes to `after` don't touch the real grid
             after = [row[:] for row in grid]
             after[y][x], after[y][x + 1] = after[y][x + 1], after[y][x]
+            if quiet_swap(after, x, y):
+                yield x, y, after, 0, 0, 0      # nothing falls, nothing clears
+                continue
             points, chains, biggest = settle_points(after)
             yield x, y, after, points, chains, biggest
 
 
+def settle_tracked(grid, bx, by):
+    """settle_points() that also follows one block while things fall: returns
+    (points, chains, biggest, bx, by), with bx, by where that block ended up
+    (only meaningful when nothing was cleared). The grid is changed in place."""
+    while True:
+        moved = False
+        for y in range(6, -1, -1):
+            for x in range(8):
+                if grid[y][x] is not None and grid[y + 1][x] is None:
+                    grid[y + 1][x], grid[y][x] = grid[y][x], None
+                    moved = True
+                    if (x, y) == (bx, by):
+                        by += 1
+        if not moved:
+            break
+    points, chains, biggest = settle_points(grid)
+    return points, chains, biggest, bx, by
+
+
 def slide_options(grid):
-    """Every useful slide: one block moved 2 to 7 places along its row, swap by swap.
+    """Every slide: one block moved 2 to 7 places sideways, swap by swap.
 
     Yields (swaps, grid after the last swap has settled, points, chains, biggest),
     where swaps is the list of cursor spots (x, y), one per swap, in order.
 
-    Sometimes the right block is in the right row but too far away: one swap
-    doesn't do it, but moving it a few places does, such as a purple block
-    sliding to the far left to drop into a purple column. A slide only counts
-    when every swap before the last one clears nothing and the block stays in
-    its row (it doesn't fall into a hole on the way), so the plan still works
-    out when the computer makes the swaps one by one.
+    Sometimes the right block is just too far away: one swap doesn't do it,
+    but moving it a few places does, such as a purple block sliding to the
+    far left to drop into a purple column. When the block moves over a hole it
+    drops into it, like in the real game, and the slide goes on in the row it
+    landed in. The slide ends when something is cleared. Slides that clear
+    nothing are yielded too (points 0): they can set up a clear for the next
+    move.
     """
     for y in range(8):
         for x in range(8):
@@ -483,23 +537,86 @@ def slide_options(grid):
                 continue
             for d in (-1, 1):                    # slide to the left or to the right
                 g = [row[:] for row in grid]
-                bx, swaps = x, []
-                while 0 <= bx + d <= 7:
-                    if g[y][bx + d] == g[y][bx]:
+                bx, by, swaps = x, y, []
+                while 0 <= bx + d <= 7 and len(swaps) < 7:
+                    if g[by][bx + d] == g[by][bx]:
                         break                    # same colour next to it: swapping changes nothing
+                    g[by][bx], g[by][bx + d] = g[by][bx + d], g[by][bx]
                     left = min(bx, bx + d)       # the cursor's left cell for this swap
-                    g[y][bx], g[y][bx + d] = g[y][bx + d], g[y][bx]
-                    swaps.append((left, y))
-                    bx += d
-                    after = [row[:] for row in g]
-                    points, chains, biggest = settle_points(after)
+                    swaps.append((left, by))
+                    if quiet_swap(g, left, by):
+                        points = chains = biggest = 0
+                        bx += d
+                    else:
+                        points, chains, biggest, bx, by = settle_tracked(g, bx + d, by)
+                    if len(swaps) >= 2:          # one swap is already a normal option
+                        yield list(swaps), [row[:] for row in g], points, chains, biggest
                     if points:
-                        if len(swaps) >= 2:      # one swap is already a normal option
-                            yield swaps, after, points, chains, biggest
                         break                    # something cleared: the slide ends here
-                    if after != g:
-                        break                    # something fell: the block left its row
-                    g = after
+
+
+def promise(grid):
+    """A quick guess at how close a grid is to new matches: the number of
+    same-coloured neighbours (side by side or on top of each other), plus pairs
+    with one block in between, in a row or a column. Used to pick which set-ups are worth a
+    closer look."""
+    n = 0
+    for y in range(8):
+        for x in range(8):
+            c = grid[y][x]
+            if c is None:
+                continue
+            if x <= 6 and grid[y][x + 1] == c:
+                n += 1
+            if y <= 6 and grid[y + 1][x] == c:
+                n += 1
+            if x <= 5 and grid[y][x + 2] == c:
+                n += 1
+            if y <= 5 and grid[y + 2][x] == c:
+                n += 1
+    return n
+
+
+def best_move_value(grid):
+    """The value of the best single move in this grid: a swap or a slide, with
+    AI_SLIDE_COST for every extra swap of a slide (0 if nothing clears).
+
+    This is the computer's "and then?" when it looks one move ahead, so it is
+    written to be quick: it swaps blocks in place and swaps them back, and only
+    copies the grid to settle it when something could actually happen. (A
+    slide that would drop its block into a hole on the way is left out here.)
+    """
+    g = [row[:] for row in grid]
+    best = 0
+    for y in range(8):
+        row = g[y]
+        for x in range(7):                       # single swaps
+            if row[x] == row[x + 1]:
+                continue
+            row[x], row[x + 1] = row[x + 1], row[x]
+            if not quiet_swap(g, x, y):
+                best = max(best, swap_value(*settle_points([r[:] for r in g])))
+            row[x], row[x + 1] = row[x + 1], row[x]
+        for x in range(8):                       # slides of 2 or more swaps
+            if row[x] is None:
+                continue
+            for d in (-1, 1):
+                bx, n = x, 0
+                while 0 <= bx + d <= 7 and row[bx + d] != row[bx]:
+                    row[bx], row[bx + d] = row[bx + d], row[bx]
+                    n += 1
+                    left = min(bx, bx + d)
+                    bx += d
+                    if not quiet_swap(g, left, y):
+                        if n >= 2:
+                            p, c, b = settle_points([r[:] for r in g])
+                            if p:
+                                best = max(best, swap_value(p, c, b) - (n - 1) * AI_SLIDE_COST)
+                        break
+                for _ in range(n):               # put the block back where it was
+                    row[bx], row[bx - d] = row[bx - d], row[bx]
+                    bx -= d
+    return best
 
 
 def swap_value(points, chains, biggest):
@@ -545,6 +662,9 @@ class Game:
         self.ticks = 0              # Game steps so far (used for the cursor blink)
         self.plan = None            # The computer's target swap (x, y), if it has one
         self.queue = []             # More swaps to make after that one (for a slide)
+        self.thinker = None         # The computer's thinking in progress (see think())
+        self.thought = None         # ... and its result once it's done
+        self.think_ticks = 0        # Game steps spent thinking about the current move
         self.ai_wait = None         # Seconds the computer still waits before swapping
 
     def ai_pace(self, slow, fast):
@@ -589,6 +709,7 @@ class Game:
                 self.plan = None
                 self.ai_wait = None
         self.queue = [(x, y - 1) for x, y in self.queue if y > 0]
+        self.thinker = self.thought = None      # the field moved: think again
         self.rises += 1
         return True
 
@@ -600,14 +721,25 @@ class Game:
 
     # ---------- the computer player ----------
     def choose_swap(self):
-        """The computer's pick. It prefers matches of more than 3 and chains, and it
+        """Think the whole way through at once (see think()) and return the pick."""
+        for _ in self.think():
+            pass
+        pick, self.thought = self.thought, None
+        return pick
+
+    def think(self):
+        """The computer's pick, worked out a bit at a time: this is a generator
+        that pauses (yield) whenever it has used AI_THINK_BUDGET seconds, so
+        the game can draw a frame in between. When it's done, the pick is in
+        self.thought.
+
+        The pick: It prefers matches of more than 3 and chains, and it
         looks one swap ahead: a swap that clears nothing now can set up a big clear
         or a chain for the next swap.
 
-        Returns:
-            A list of swaps to make, in order: each one the left cell (x, y)
-            of the cursor. Usually one swap; more for a slide (see
-            slide_options()).
+        The pick is a list of swaps to make, in order: each one the left cell
+        (x, y) of the cursor. Usually one swap; more for a slide (see
+        slide_options()).
 
         How it decides: it gives every possible swap a value and picks the
         highest. The value is:
@@ -622,6 +754,7 @@ class Game:
         Slides (a block moved several places along its row) are judged the
         same way, minus AI_SLIDE_COST for every swap after the first.
         """
+        start = time.monotonic()
         height = stack_height(self.grid)
         options = []
         # Step 1: judge every swap on what it does right now
@@ -639,24 +772,28 @@ class Game:
                      - abs(x - self.cursor[0]) * 0.3 - abs(y - self.cursor[1]) * 0.3
                      + random.random())
             options.append([value, x, y, after, points, swaps])
-        # Step 2: look one swap ahead, but only for swaps that score nothing now
-        # ("set-ups"). For a random handful of them (AI_LOOKAHEAD, to keep the
-        # thinking fast) it tries every swap that could follow, and adds part of
-        # the best follow-up's value. A set-up for a big chain can then beat a
-        # small match right now.
-        setups = [o for o in options if o[4] == 0 and len(o[5]) == 1]
-        random.shuffle(setups)
+        # Step 2: look one move ahead, but only for moves that score nothing now
+        # ("set-ups"), swaps and slides alike. For the AI_LOOKAHEAD most promising
+        # ones (see promise(); this keeps the thinking fast) it tries every move
+        # that could follow, and adds part of the best follow-up's value. A
+        # set-up for a big match, a combo or a chain can then beat a small match
+        # right now: for example sliding a block next to a pair, so that the
+        # next slide clears five at once.
+        setups = [o for o in options if o[4] == 0]
+        setups.sort(key=lambda o: promise(o[3]) + random.random(), reverse=True)
         for option in setups[:AI_LOOKAHEAD]:
-            follow = max((swap_value(p, c, b) for _, _, _, p, c, b in swap_options(option[3])),
-                         default=0)
-            option[0] += follow * AI_SETUP_WEIGHT
+            option[0] += best_move_value(option[3]) * AI_SETUP_WEIGHT
+            if time.monotonic() - start > AI_THINK_BUDGET:
+                yield                            # let the game run a step, then go on
+                start = time.monotonic()
         # Step 3: now and then (AI_SLOPPY), or when there is nothing to swap at all,
         # make a random swap somewhere in the lower part of the field instead
         if not options or random.random() < AI_SLOPPY:
-            return [(random.randint(0, 6), random.randint(3, 7))]
+            self.thought = [(random.randint(0, 6), random.randint(3, 7))]
+            return
         # Otherwise pick the option with the highest value
         best = max(options, key=lambda o: o[0])
-        return best[5]
+        self.thought = best[5]
 
     def ai_controls(self):
         """Returns (move, swap) like the joystick would.
@@ -668,10 +805,18 @@ class Game:
             A tuple (move, swap). move is a step (dx, dy) such as (1, 0) for
             "right", or None for no step; swap is True when it wants to swap now.
         """
-        # No target yet? Take the next swap of a slide, or think of a new move
+        # No target yet? Take the next swap of a slide, or think of a new move.
+        # Thinking can take a few game steps (see think()); the cursor waits.
         if self.plan is None:
             if not self.queue:
-                self.queue = self.choose_swap()
+                if self.thinker is None:
+                    self.thinker = self.think()
+                if self.thought is None:
+                    next(self.thinker, None)
+                    self.think_ticks += 1
+                if self.thought is None:
+                    return None, False
+                self.queue, self.thought, self.thinker = self.thought, None, None
             self.plan = self.queue.pop(0)
         x, y = self.plan
         cx, cy = self.cursor
@@ -680,7 +825,9 @@ class Game:
             # Pause a moment on the spot first, like a person checking the move,
             # so the demo is easy to follow
             if self.ai_wait is None:
-                self.ai_wait = self.ai_pace(AI_THINK, AI_THINK_FAST)
+                # (time already spent thinking counts towards the pause)
+                self.ai_wait = self.ai_pace(AI_THINK, AI_THINK_FAST) - self.think_ticks * TICK
+                self.think_ticks = 0
             self.ai_wait -= TICK
             if self.ai_wait > 0:
                 return None, False
@@ -840,6 +987,7 @@ def play_game(sense, stick, human):
             game.human = False
             game.plan = None
             game.queue = []
+            game.thinker = game.thought = None
 
         # Decide this step's move and swap: from the joystick, or from the computer.
         # Both go through game.step(); only the cursor speed differs.
