@@ -296,7 +296,7 @@ AI_CURSOR_DELAY = 0.28      # Seconds per cursor step for the computer at the st
 AI_CURSOR_DELAY_FAST = 0.12 # ... speeding up to this as the stack rises faster
 AI_THINK = 0.45             # Seconds the computer pauses on the spot before it swaps ...
 AI_THINK_FAST = 0.1         # ... shrinking to this later in the game
-AI_PANIC_HEIGHT = 7         # Stack this high (rows): the computer gets a short speed boost ...
+AI_PANIC_HEIGHT = 6         # Stack this high (rows): the computer gets a short speed boost ...
 AI_PANIC_SPEED = 0.5        # ... and plays twice as fast as its fastest pace until it's lower
 FALL_STEP = 0.05            # Seconds per row for falling blocks
 AI_SLOPPY = 0.1             # Chance the computer makes a random swap
@@ -304,6 +304,12 @@ AI_LOOKAHEAD = 50           # Most promising set-up moves the computer looks one
 AI_THINK_BUDGET = 0.008     # Seconds of thinking per game step, so the game keeps running smoothly
 AI_SETUP_WEIGHT = 0.7      # How much a set-up for the next swap is worth now
 AI_SLIDE_COST = 8           # A slide (one block moved several places along its row) costs this per extra swap
+AI_HEIGHT_COST = 6          # A move that makes the stack one row taller costs this
+AI_WALK_COST = 0.3          # Each cursor step to get to a move costs this (so it prefers nearby moves)
+AI_DANGER_HEIGHT = 6        # From this stack height on the computer plays safe: no random swaps ...
+AI_DANGER_ROW = 100         # ... every row the stack gets lower is worth this much extra ...
+AI_DANGER_BLOCK = 15        # ... and every block cleared this much extra ...
+AI_DANGER_LOOKAHEAD = 0     # ... and it skips looking ahead, so it moves quicker
 # (AI = "artificial intelligence", here simply: the computer player. A higher
 # AI_SLOPPY makes it play worse and more human; a higher AI_LOOKAHEAD makes it
 # smarter but slower to think.)
@@ -727,6 +733,26 @@ class Game:
         pick, self.thought = self.thought, None
         return pick
 
+    def move_value(self, after, points, chains, biggest, swaps, x, y, height):
+        """How much the computer likes one move (see think()).
+
+        Points first (swap_value()), minus AI_HEIGHT_COST for every row the
+        stack grows, AI_SLIDE_COST for every extra swap of a slide and
+        AI_WALK_COST for every cursor step to get there, plus a random bit
+        below 1. When the stack is AI_DANGER_HEIGHT or taller, staying alive
+        comes first: a move that lowers the stack or clears many blocks gets a
+        big bonus (AI_DANGER_ROW per row lower, AI_DANGER_BLOCK per block).
+        """
+        new_height = stack_height(after)
+        value = (swap_value(points, chains, biggest) - (new_height - height) * AI_HEIGHT_COST
+                 - (swaps - 1) * AI_SLIDE_COST
+                 - (abs(x - self.cursor[0]) + abs(y - self.cursor[1])) * AI_WALK_COST
+                 + random.random())
+        if height >= AI_DANGER_HEIGHT:
+            cleared = sum(c is not None for row in self.grid for c in row) - sum(c is not None for row in after for c in row)
+            value += (height - new_height) * AI_DANGER_ROW + cleared * AI_DANGER_BLOCK
+        return value
+
     def think(self):
         """The computer's pick, worked out a bit at a time: this is a generator
         that pauses (yield) whenever it has used AI_THINK_BUDGET seconds, so
@@ -759,18 +785,13 @@ class Game:
         options = []
         # Step 1: judge every swap on what it does right now
         for x, y, after, points, chains, biggest in swap_options(self.grid):
-            value = (swap_value(points, chains, biggest) - (stack_height(after) - height) * 6
-                     - abs(x - self.cursor[0]) * 0.3 - abs(y - self.cursor[1]) * 0.3
-                     + random.random())
+            value = self.move_value(after, points, chains, biggest, 1, x, y, height)
             options.append([value, x, y, after, points, [(x, y)]])
         # Slides: one block moved several places along its row to make a match.
         # Each extra swap costs AI_SLIDE_COST, so a nearby single swap wins a tie.
         for swaps, after, points, chains, biggest in slide_options(self.grid):
             x, y = swaps[0]
-            value = (swap_value(points, chains, biggest) - (stack_height(after) - height) * 6
-                     - (len(swaps) - 1) * AI_SLIDE_COST
-                     - abs(x - self.cursor[0]) * 0.3 - abs(y - self.cursor[1]) * 0.3
-                     + random.random())
+            value = self.move_value(after, points, chains, biggest, len(swaps), x, y, height)
             options.append([value, x, y, after, points, swaps])
         # Step 2: look one move ahead, but only for moves that score nothing now
         # ("set-ups"), swaps and slides alike. For the AI_LOOKAHEAD most promising
@@ -781,14 +802,14 @@ class Game:
         # next slide clears five at once.
         setups = [o for o in options if o[4] == 0]
         setups.sort(key=lambda o: promise(o[3]) + random.random(), reverse=True)
-        for option in setups[:AI_LOOKAHEAD]:
+        for option in setups[:AI_LOOKAHEAD if height < AI_DANGER_HEIGHT else AI_DANGER_LOOKAHEAD]:
             option[0] += best_move_value(option[3]) * AI_SETUP_WEIGHT
             if time.monotonic() - start > AI_THINK_BUDGET:
                 yield                            # let the game run a step, then go on
                 start = time.monotonic()
         # Step 3: now and then (AI_SLOPPY), or when there is nothing to swap at all,
         # make a random swap somewhere in the lower part of the field instead
-        if not options or random.random() < AI_SLOPPY:
+        if not options or (random.random() < AI_SLOPPY and height < AI_DANGER_HEIGHT):
             self.thought = [(random.randint(0, 6), random.randint(3, 7))]
             return
         # Otherwise pick the option with the highest value
