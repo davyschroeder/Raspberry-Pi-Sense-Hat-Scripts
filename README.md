@@ -19,12 +19,17 @@ Little animations and games for the 8×8 LED matrix of the
 | `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains |
 | `bomberman.py` | Drop bombs to blow up bricks and monsters, collect power-ups and find the hidden exit, level after level |
 | `breakout.py` | Smash the bricks with ball and paddle through 8 levels, with silver and gold bricks and power-up capsules (wider paddle, catch, laser, slow, three balls, level exit, extra life) |
+| `coin_flip.py` | Heads or tails: a spinning coin flies up, turns from gold to silver and back, and wobbles to a stop on a smiling head or a 1, with a tally of every flip |
+| `dice.py` | Roll one big die that tumbles over and over, or two small dice that bounce across the display; doubles flash gold |
 | `flappy_bird.py` | Flap through the gaps in the pipes; every 5 points they come faster |
 | `frogger.py` | Hop as far up as you can through an endless, ever faster world of roads and rivers that keeps scrolling up. 10 points per row, 50 per fly |
 | `missile_command.py` | Shoot down the missiles before they hit your four cities, with chain-reaction fireballs and splitting missiles |
+| `peg_drop.py` | Drop a ball through a board of pegs twice as tall as the display into slots worth 1 to 10 points, 5 balls per game |
 | `pinball.py` | A pinball table twice as tall as the display, with a camera following the ball: a launch lane, pop bumpers, slingshots, top lanes, a ramp and multiball |
 | `platformer.py` | A tiny hero with 3 lives runs through ever harder levels: pits, pipes, coins, enemies and birds |
 | `pong.py` | Pong to 5 points, with angled shots and a ball that speeds up |
+| `rubiks_cube.py` | A real, working Rubik's Cube: turn rows and columns, turn the whole cube to see every face. The demo scrambles it and solves it again; solve it yourself and the next scramble is longer |
+| `slot_machine.py` | Three reels that stop one by one: three of a kind wins coins, three sevens hit the jackpot |
 | `snake.py` | A snake hunting for food that changes colour every time |
 | `space_invaders.py` | Shoot the marching invaders before they land, hide behind the shields and catch the saucer |
 | `tetris.py` | Classic falling blocks in an 8×8 well |
@@ -76,18 +81,43 @@ again.
 | `block_attack.py` | Move the 2-block cursor with the joystick, press to swap the two blocks |
 | `bomberman.py` | Push the joystick to walk, press to drop a bomb |
 | `breakout.py` | Left / right to move the paddle, press to launch the ball or fire the laser |
+| `coin_flip.py` | Press (or left / right) to flip, up or down to see the tally (gold = heads on the left, silver = tails on the right) |
+| `dice.py` | Press (or left / right) to roll, up for two dice, down for one |
 | `flappy_bird.py` | Push the joystick any way (or press it) to flap |
 | `frogger.py` | Push the joystick to hop up, down, left or right |
 | `missile_command.py` | Move the crosshair with the joystick, press to fire |
+| `peg_drop.py` | Left / right to aim, press or down to drop the ball |
 | `pinball.py` | Left / right for the flippers (hold to keep them up), up / down to tilt, press to switch between the follow camera and an overview of the whole table |
 | `platformer.py` | Left / right to run, up or press to jump |
 | `pong.py` | Up / down to move the left paddle; the computer plays right |
+| `rubiks_cube.py` | See [Turning the Rubik's Cube](#turning-the-rubiks-cube) |
+| `slot_machine.py` | Press (or push any way) to spin, press again to stop the reels one by one. A spin costs 1 of your 10 coins |
 | `snake.py` | Joystick in any direction to steer |
 | `space_invaders.py` | Left / right to move, up or press to fire |
 | `tetris.py` | Left / right to move, up to rotate, down to drop faster, press to drop straight down |
 
 In the emulator, use the joystick in the emulator window or the arrow keys and
 Enter while that window is focused.
+
+#### Turning the Rubik's Cube
+
+The display shows the front face of the cube: 3×3 stickers of 2×2 pixels.
+
+- **Move the cursor** (a blinking frame around one sticker) with the joystick.
+  Push past the edge of the face and the whole cube turns to show the face
+  behind that edge, so you can walk all the way round it.
+- **Press** to grab the row and the column under the cursor: grey lines
+  appear along them. Now push **left / right** to turn that row, or
+  **up / down** to turn that column. Press again to let go and move the
+  cursor.
+- To turn the front face itself, look at the cube from the side first: the
+  front face is then a column you can turn.
+- **Hold the press for 2 seconds** and the computer shows you how to solve
+  it, then gives you a new scramble.
+
+Your first scramble is only 2 turns; every time you solve the cube the next
+one is a bit longer. The demo uses exactly the same moves, so watching it is
+a good way to learn the controls.
 
 #### With a gamepad
 
