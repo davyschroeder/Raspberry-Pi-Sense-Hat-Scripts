@@ -20,7 +20,7 @@ Little animations and games for the 8×8 LED matrix of the
 | `bomberman.py` | Drop bombs to blow up bricks and monsters, collect power-ups and find the hidden exit, level after level |
 | `breakout.py` | Smash the bricks with ball and paddle through 8 levels, with silver and gold bricks and power-up capsules (wider paddle, catch, laser, slow, three balls, level exit, extra life) |
 | `coin_flip.py` | Heads or tails: a spinning coin flies up, turns from gold to silver and back, and wobbles to a stop on a smiling head or a 1, with a tally of every flip |
-| `dice.py` | Roll one big die that tumbles over and over, or two small dice that bounce across the display; doubles flash gold |
+| `dice.py` | Roll a D4, D6, D8, D10, D12 or D20 that tumbles over and over, or two six-sided dice that bounce across the display; every die gets a random colour, the highest number and doubles flash gold |
 | `flappy_bird.py` | Flap through the gaps in the pipes; every 5 points they come faster |
 | `frogger.py` | Hop as far up as you can through an endless, ever faster world of roads and rivers that keeps scrolling up. 10 points per row, 50 per fly |
 | `missile_command.py` | Shoot down the missiles before they hit your four cities, with chain-reaction fireballs and splitting missiles |
@@ -82,7 +82,7 @@ again.
 | `bomberman.py` | Push the joystick to walk, press to drop a bomb |
 | `breakout.py` | Left / right to move the paddle, press to launch the ball or fire the laser |
 | `coin_flip.py` | Press (or left / right) to flip, up or down to see the tally (gold = heads on the left, silver = tails on the right) |
-| `dice.py` | Press (or left / right) to roll, up for two dice, down for one |
+| `dice.py` | Left / right picks a die (its name scrolls by first), up / down changes its colour, press to roll |
 | `flappy_bird.py` | Push the joystick any way (or press it) to flap |
 | `frogger.py` | Push the joystick to hop up, down, left or right |
 | `missile_command.py` | Move the crosshair with the joystick, press to fire |

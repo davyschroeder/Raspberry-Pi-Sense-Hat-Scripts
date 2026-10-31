@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Sense HAT – Dice: roll one big die or two small ones.
+"""Sense HAT – Dice: roll a D4, D6, D8, D10, D12 or D20, or two six-sided dice.
 
 The computer rolls now and then until you touch the joystick: then it's your
-turn. Press the joystick (or push it left or right) to roll, push it up for
-two dice and down for one. After 30 seconds without input the computer rolls
-again.
+turn. Push the joystick left or right to pick a die (its name scrolls by
+first, like "D12", and every die you pick gets a new random colour), up or
+down to change its colour, and press it to roll. The die tumbles over and
+over, slower and slower, before it lands; rolling the highest number makes it
+flash gold, and so does a double with two dice. After 30 seconds without input
+the computer rolls again.
 """
 import atexit
 import os
@@ -273,20 +276,38 @@ def show_play_sign(sense):
 # Colours and timing
 # ---------------------------------------------------------------------------
 OFF = (0, 0, 0)
-PIP = (255, 255, 255)                     # The dots on the dice ("pips")
-BIG_DIE = (190, 0, 20)                    # The body of the big single die
-SMALL_DICE = [(150, 0, 15), (0, 50, 170)]  # The bodies of the two small dice: red and blue
-GOLD = (255, 190, 0)                      # Doubles make the pips flash gold
+PIP = (255, 255, 255)                     # The dots and numbers on the dice
+GOLD = (255, 190, 0)                      # The highest roll (and a double) flashes gold
 TICK = 0.02                               # Seconds per step while waiting
 DEMO_PAUSE = 2.5                          # Seconds between two rolls in the demo
-ROLL_STEPS = 12                           # How many times the big die tumbles over
-TUMBLE_STEPS = 16                         # How many hops the two small dice make
-ROLL_KEYS = ("middle", "left", "right")   # Joystick moves that roll the dice
+ROLL_STEPS = 22                           # How many times the big die tumbles over
+TUMBLE_STEPS = 28                         # How many hops the two small dice make
+SCROLL_STEP = 0.055                       # Seconds per pixel while a die's name scrolls by
 SIDES = ("left", "right", "up", "down")   # Directions a die can tumble in
 
-# Where the pips go on the big die, which fills the whole display. Each pair
-# is the top-left pixel of a 2x2 pip. The six uses the top and bottom rows, so
-# its three pairs of pips stay apart.
+# The dice you can pick with left and right: the number of sides, and 0 for
+# two six-sided dice thrown together
+DICE = [4, 6, 8, 10, 12, 20, 0]
+START_DIE = 1                             # Start with the D6
+
+# Colours for the body of a die (dark enough for the white pips and numbers to
+# stand out). Up and down go through them; every newly picked die gets a
+# random one.
+COLORS = [
+    (190, 0, 20),      # red
+    (0, 140, 60),      # green
+    (0, 70, 200),      # blue
+    (150, 0, 170),     # purple
+    (200, 90, 0),      # orange
+    (0, 130, 150),     # teal
+    (200, 0, 110),     # pink
+    (120, 70, 20),     # brown
+    (90, 90, 110),     # grey
+]
+
+# Where the pips go on the big six-sided die, which fills the whole display.
+# Each pair is the top-left pixel of a 2x2 pip. The six uses the top and
+# bottom rows, so its three pairs of pips stay apart.
 BIG_PIPS = {
     1: [(3, 3)],
     2: [(5, 1), (1, 5)],
@@ -304,6 +325,24 @@ SMALL_PIPS = {
     4: [(0, 0), (2, 0), (0, 2), (2, 2)],
     5: [(0, 0), (2, 0), (1, 1), (0, 2), (2, 2)],
     6: [(0, 0), (0, 1), (0, 2), (2, 0), (2, 1), (2, 2)],
+}
+
+# A tiny 3x5 font for the numbers on the other dice and for the dice names
+# ("#" = lit). Two digits next to each other with one dark column between
+# them are 7 pixels wide, so they fit on the 8x8 display.
+FONT = {
+    "0": ["###", "#.#", "#.#", "#.#", "###"],
+    "1": [".#.", "##.", ".#.", ".#.", "###"],
+    "2": ["###", "..#", "###", "#..", "###"],
+    "3": ["###", "..#", ".##", "..#", "###"],
+    "4": ["#.#", "#.#", "###", "..#", "..#"],
+    "5": ["###", "#..", "###", "..#", "###"],
+    "6": ["###", "#..", "###", "#.#", "###"],
+    "7": ["###", "..#", ".#.", ".#.", ".#."],
+    "8": ["###", "#.#", "###", "#.#", "###"],
+    "9": ["###", "#.#", "###", "..#", "###"],
+    "D": ["##.", "#.#", "#.#", "#.#", "##."],
+    "x": ["...", "#.#", ".#.", "#.#", "..."],
 }
 
 
@@ -325,15 +364,38 @@ def transpose(frame):
     return [list(row) for row in zip(*frame)]
 
 
-def big_die(value, pip=PIP):
-    """An 8x8 picture of the big die showing `value` (1 to 6)."""
-    frame = [[BIG_DIE] * 8 for _ in range(8)]
+def text_columns(text):
+    """The text as a list of pixel columns (each 5 pixels high), one dark column between letters."""
+    columns = []
+    for ch in text:
+        glyph = FONT[ch]
+        for x in range(len(glyph[0])):
+            columns.append([glyph[y][x] == "#" for y in range(5)])
+        columns.append([False] * 5)
+    return columns[:-1]
+
+
+def big_die(sides, value, body, pip=PIP):
+    """An 8x8 picture of the big die with `sides` sides showing `value`,
+    with a body of colour `body`.
+
+    The six-sided die has pips; the other dice show their number.
+    """
+    frame = [[body] * 8 for _ in range(8)]
     for x, y in ((0, 0), (7, 0), (0, 7), (7, 7)):
         frame[y][x] = OFF                  # Rounded corners
-    for px, py in BIG_PIPS[value]:
-        for dy in (0, 1):
-            for dx in (0, 1):
-                frame[py + dy][px + dx] = pip
+    if sides == 6:
+        for px, py in BIG_PIPS[value]:
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    frame[py + dy][px + dx] = pip
+    else:
+        columns = text_columns(str(value))
+        x0 = (8 - len(columns)) // 2       # Centred (a 7-wide number leaves one column)
+        for i, column in enumerate(columns):
+            for y, lit in enumerate(column):
+                if lit:
+                    frame[y + 2 if value < 10 else y + 1][x0 + i] = pip
     return frame
 
 
@@ -371,16 +433,17 @@ def tumble_frame(old, new, direction, amount):
     return frame
 
 
-def small_dice(values, places, pip=PIP):
+def small_dice(values, places, body, pip=PIP):
     """An 8x8 picture of the two small dice.
 
     Args:
         values: the two values showing, e.g. [3, 5].
         places: the top-left pixel (x, y) of each die.
+        body: the colour of the dice.
         pip: the colour of the pips (gold for a double).
     """
     frame = [[OFF] * 8 for _ in range(8)]
-    for value, (x0, y0), body in zip(values, places, SMALL_DICE):
+    for value, (x0, y0) in zip(values, places):
         for y in range(3):
             for x in range(3):
                 frame[y0 + y][x0 + x] = body
@@ -389,9 +452,9 @@ def small_dice(values, places, pip=PIP):
     return frame
 
 
-def new_value(old):
+def new_value(old, sides=6):
     """A random side for a die that tips over: never the same side again."""
-    return random.choice([v for v in range(1, 7) if v != old])
+    return random.choice([v for v in range(1, sides + 1) if v != old])
 
 
 def wait(stick, seconds, human):
@@ -412,31 +475,52 @@ def wait(stick, seconds, human):
     return pressed
 
 
-def roll_big(sense, stick, human, value):
+def show_name(sense, stick, human, name, color):
+    """Scroll the name of the chosen die (like "D12") across the display, in its colour.
+
+    Returns the joystick moves made meanwhile, so a quick second push still counts.
+    """
+    columns = [[False] * 5] * 8 + text_columns(name) + [[False] * 5] * 8
+    pressed = []
+    for start in range(len(columns) - 7):
+        frame = [[OFF] * 8 for _ in range(8)]
+        for x in range(8):
+            for y, lit in enumerate(columns[start + x]):
+                if lit:
+                    frame[y + 1][x] = color
+        sense.set_pixels(flatten(frame))
+        pressed += wait(stick, SCROLL_STEP, human)
+    return pressed
+
+
+def roll_big(sense, stick, human, sides, value, body):
     """Let the big die tumble over and over, slower and slower, and land.
 
-    Returns the value it lands on.
+    Returns the value it lands on. The highest number flashes gold.
     """
     for step in range(ROLL_STEPS):
-        new = new_value(value)
+        new = new_value(value, sides)
         direction = random.choice(SIDES)
         slow = step / ROLL_STEPS             # 0 at the start, almost 1 at the end
-        frames = 2 + step // 3               # More in-between pictures as it slows down
+        frames = 2 + step // 4               # More in-between pictures as it slows down
         for f in range(1, frames + 1):
-            sense.set_pixels(flatten(tumble_frame(big_die(value), big_die(new), direction,
-                                                  f / (frames + 1))))
+            sense.set_pixels(flatten(tumble_frame(big_die(sides, value, body), big_die(sides, new, body),
+                                                  direction, f / (frames + 1))))
             wait(stick, 0.02 + 0.03 * slow, human)
         value = new
-        sense.set_pixels(flatten(big_die(value)))
-        wait(stick, 0.03 + 0.25 * slow * slow, human)
-    # It landed: the pips light up gold for a moment
-    sense.set_pixels(flatten(big_die(value, GOLD)))
-    wait(stick, 0.12, human)
-    sense.set_pixels(flatten(big_die(value)))
+        sense.set_pixels(flatten(big_die(sides, value, body)))
+        wait(stick, 0.03 + 0.3 * slow * slow, human)
+    # It landed: the pips or the number light up gold for a moment
+    flashes = 3 if value == sides else 1
+    for _ in range(flashes):
+        sense.set_pixels(flatten(big_die(sides, value, body, GOLD)))
+        wait(stick, 0.15, human)
+        sense.set_pixels(flatten(big_die(sides, value, body)))
+        wait(stick, 0.15 if flashes > 1 else 0, human)
     return value
 
 
-def roll_small(sense, stick, human, values, places):
+def roll_small(sense, stick, human, values, places, body):
     """Throw the two small dice across the display: they bounce off the edges
     and each other while tumbling, slow down and come to rest.
 
@@ -445,7 +529,7 @@ def roll_small(sense, stick, human, values, places):
     places = [list(p) for p in places]
     speeds = [[random.choice((-1, 1)), random.choice((-1, 1))] for _ in range(2)]
     for step in range(TUMBLE_STEPS):
-        if step < TUMBLE_STEPS - 3:          # The last few hops they only tumble, lying still
+        if step < TUMBLE_STEPS - 4:          # The last few hops they only tumble, lying still
             before = [p[:] for p in places]
             for place, speed in zip(places, speeds):
                 for axis in (0, 1):
@@ -461,15 +545,15 @@ def roll_small(sense, stick, human, values, places):
                 for speed in speeds:
                     speed[0], speed[1] = -speed[0], -speed[1]
         values = [new_value(v) for v in values]
-        sense.set_pixels(flatten(small_dice(values, places)))
+        sense.set_pixels(flatten(small_dice(values, places, body)))
         slow = step / TUMBLE_STEPS
-        wait(stick, 0.05 + 0.25 * slow * slow, human)
+        wait(stick, 0.05 + 0.28 * slow * slow, human)
     if values[0] == values[1]:
         # A double: the pips flash gold
         for _ in range(3):
-            sense.set_pixels(flatten(small_dice(values, places, GOLD)))
+            sense.set_pixels(flatten(small_dice(values, places, body, GOLD)))
             wait(stick, 0.15, human)
-            sense.set_pixels(flatten(small_dice(values, places)))
+            sense.set_pixels(flatten(small_dice(values, places, body)))
             wait(stick, 0.15, human)
     return values, places
 
@@ -477,20 +561,34 @@ def roll_small(sense, stick, human, values, places):
 def play(sense, stick, human):
     """Roll the dice until the demo is interrupted or the player walks away.
 
-    In the demo the computer rolls every DEMO_PAUSE seconds and switches
-    between one and two dice every third roll. Raises TakeOver or PlayerLeft.
+    In the demo the computer rolls every DEMO_PAUSE seconds and now and then
+    picks another die or colour. Raises TakeOver or PlayerLeft.
     """
-    two = False                              # One big die or two small ones?
-    values = [random.randint(1, 6), random.randint(1, 6)]
+    choice = START_DIE                       # Which die of DICE is picked
+    color = random.randrange(len(COLORS))    # Which colour of COLORS it has
+    last = {sides: random.randint(1, sides) for sides in DICE if sides}   # What each die shows
+    pair = [random.randint(1, 6), random.randint(1, 6)]
     places = [(0, 1), (5, 4)]
     rolls = 0
 
     def show():
         """Draw the dice as they are now."""
-        if two:
-            sense.set_pixels(flatten(small_dice(values, places)))
+        sides = DICE[choice]
+        if sides:
+            sense.set_pixels(flatten(big_die(sides, last[sides], COLORS[color])))
         else:
-            sense.set_pixels(flatten(big_die(values[0])))
+            sense.set_pixels(flatten(small_dice(pair, places, COLORS[color])))
+
+    def pick(step):
+        """Pick the next (step 1) or previous (step -1) die, in a new random colour,
+        and show its name first. Returns the joystick moves made meanwhile."""
+        nonlocal choice, color
+        choice = (choice + step) % len(DICE)
+        color = random.choice([c for c in range(len(COLORS)) if c != color])
+        sides = DICE[choice]
+        more = show_name(sense, stick, human, "D%d" % sides if sides else "2xD6", COLORS[color])
+        show()
+        return more
 
     show()
     while True:
@@ -500,22 +598,23 @@ def play(sense, stick, human):
             wait(stick, DEMO_PAUSE, False)
             rolls += 1
             keys = ["middle"]
-            if rolls % 3 == 0:               # Now and then the computer switches
-                keys = ["down" if two else "up", "middle"]
-        for key in keys:
-            if key == "up" and not two:
-                two = True
+            if rolls % 3 == 0:               # Now and then the computer picks another die
+                keys = [random.choice(("left", "right", "right")), "middle"]
+            elif rolls % 3 == 1 and rolls > 1:   # ... or another colour
+                keys = [random.choice(("up", "down")), "middle"]
+        while keys:
+            key = keys.pop(0)
+            if key in ("left", "right"):
+                keys = pick(-1 if key == "left" else 1) + keys
+            elif key in ("up", "down"):
+                color = (color + (1 if key == "up" else -1)) % len(COLORS)
                 show()
-                wait(stick, 0.4, human)
-            elif key == "down" and two:
-                two = False
-                show()
-                wait(stick, 0.4, human)
-            elif key in ROLL_KEYS:
-                if two:
-                    values, places = roll_small(sense, stick, human, values, places)
+            elif key == "middle":
+                sides = DICE[choice]
+                if sides:
+                    last[sides] = roll_big(sense, stick, human, sides, last[sides], COLORS[color])
                 else:
-                    values[0] = roll_big(sense, stick, human, values[0])
+                    pair, places = roll_small(sense, stick, human, pair, places, COLORS[color])
                 stick.read()                 # Forget presses made while the dice rolled
                 break
 
