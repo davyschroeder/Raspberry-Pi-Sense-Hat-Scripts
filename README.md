@@ -96,7 +96,7 @@ simply wait until you press the joystick.
 | `slot_machine.py` | Press (or push any way) to spin, press again to stop the reels one by one. A spin costs 1 of your 10 coins |
 | `snake.py` | Joystick in any direction to steer |
 | `space_invaders.py` | Left / right to move, up or press to fire |
-| `tetris.py` | Left / right to move, up to rotate, down to drop faster, press to drop straight down |
+| `tetris.py` | Left / right to move, press (A) to rotate, down to drop faster, up to drop straight down |
 
 In the emulator, use the joystick in the emulator window or the arrow keys and
 Enter while that window is focused.

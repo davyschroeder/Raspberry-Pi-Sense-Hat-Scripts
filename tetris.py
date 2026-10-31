@@ -7,8 +7,8 @@ once, the more points; every 5 rows the pieces fall faster. When a new piece
 has no room left at the top, it's game over.
 
 The computer plays a demo until you touch the joystick: then you play.
-Left and right to move, up to rotate, down to drop faster, press to drop the
-piece straight down. After game over, or when you leave the joystick alone for
+Left and right to move, press (the A button on a gamepad) to rotate, down to
+drop faster, up to drop the piece straight down. After game over, or when you leave the joystick alone for
 a while, the computer takes over again.
 """
 import atexit
@@ -584,9 +584,9 @@ def joystick_controls(stick, pressed):
     # True/False count as 1/0, so right gives +1, left gives -1, both or none 0
     dx = (("right" in stick.held or "right" in pressed)
           - ("left" in stick.held or "left" in pressed))
-    rotate = "up" in pressed
+    rotate = "middle" in pressed            # Press (A on a gamepad) rotates
     soft_drop = "down" in stick.held or "down" in pressed
-    hard_drop = "middle" in pressed
+    hard_drop = "up" in pressed
     return dx, rotate, soft_drop, hard_drop
 
 
@@ -604,7 +604,7 @@ def play_game(sense, stick, human):
 
         # Get this tick's controls from the player or the computer, then run a step
         controls = joystick_controls(stick, pressed) if game.human else game.ai_controls()
-        if game.human and "up" in pressed:
+        if game.human and "middle" in pressed:
             game.timers["move"] = MOVE_DELAY   # Rotate right away on every press
         full_rows = game.step(controls)
 
