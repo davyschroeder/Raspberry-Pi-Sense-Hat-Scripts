@@ -520,30 +520,38 @@ def roll_big(sense, stick, human, sides, value, body):
     return value
 
 
+def separated(a, b):
+    """True when two small dice (3x3, top-left corners a and b) have at least one dark pixel between them."""
+    return abs(a[0] - b[0]) >= 4 or abs(a[1] - b[1]) >= 4
+
+
 def roll_small(sense, stick, human, values, places, body):
-    """Throw the two small dice across the display: they bounce off the edges
-    and each other while tumbling, slow down and come to rest.
+    """Shake the two small dice across the display: with every hop they jump
+    to a new spot (they may fly over each other), slower and slower, then they
+    roll to two separate places and come to rest.
 
     Returns (values, places) where they landed. Doubles flash gold.
     """
     places = [list(p) for p in places]
-    speeds = [[random.choice((-1, 1)), random.choice((-1, 1))] for _ in range(2)]
+    # Where they will lie at the end: two spots with a dark gap between them
+    while True:
+        final = [[random.randint(0, 5), random.randint(0, 5)] for _ in range(2)]
+        if separated(*final):
+            break
+    settle = 6                               # The last hops bring them to those spots
     for step in range(TUMBLE_STEPS):
-        if step < TUMBLE_STEPS - 4:          # The last few hops they only tumble, lying still
-            before = [p[:] for p in places]
-            for place, speed in zip(places, speeds):
-                for axis in (0, 1):
-                    # A die is 3 pixels wide, so its top-left corner stays between 0 and 5
-                    if not 0 <= place[axis] + speed[axis] <= 5:
-                        speed[axis] = -speed[axis]      # Bounce off the edge
-                    place[axis] += speed[axis]
-            a, b = places
-            if abs(a[0] - b[0]) < 4 and abs(a[1] - b[1]) < 4:
-                # Too close (the dice keep at least one dark pixel between them):
-                # they bump into each other and both bounce back
-                places = before
-                for speed in speeds:
-                    speed[0], speed[1] = -speed[0], -speed[1]
+        for i, place in enumerate(places):
+            for axis in (0, 1):
+                if step < TUMBLE_STEPS - settle:
+                    # Shaking: jump 1 or 2 pixels in a random direction (a die is
+                    # 3 pixels wide, so its top-left corner stays between 0 and 5)
+                    place[axis] = max(0, min(5, place[axis] + random.choice((-2, -1, 1, 2))))
+                else:
+                    # Settling: one pixel at a time towards the final spot
+                    gap = final[i][axis] - place[axis]
+                    place[axis] += (gap > 0) - (gap < 0)
+        if step >= TUMBLE_STEPS - 2:
+            places = [p[:] for p in final]       # Make sure they really lie apart
         values = [new_value(v) for v in values]
         sense.set_pixels(flatten(small_dice(values, places, body)))
         slow = step / TUMBLE_STEPS
