@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Sense HAT – Heads or tails: flip a spinning coin.
 
-The computer flips the coin now and then until you touch the joystick: then
-it's your turn. Press the joystick (or push it left or right) to flip; push it
-up or down to see the tally of heads and tails. After 30 seconds without input
-the computer flips again.
+Press the joystick (or push it left or right) to flip; push it up or down to
+see the tally of heads and tails. The coin waits for you: there is no demo.
 """
 import atexit
 import math
@@ -314,17 +312,8 @@ TALLY_EMPTY = {HEADS: (16, 8, 0), TAILS: (9, 9, 11)}
 TICK = 0.02                 # Seconds per step of the animation
 FLIP_FRAMES = 70            # Steps the coin is in the air (70 x 0.02 = 1.4 seconds)
 TOSS_HEIGHT = 3.0           # How many pixels the coin flies up
-DEMO_PAUSE = 2.5            # Seconds between two flips in the demo
 TALLY_TIME = 2.0            # Seconds the tally stays on screen
 FLIP_KEYS = ("middle", "left", "right")
-
-
-class TakeOver(Exception):
-    """Raised during the demo when someone touches the joystick."""
-
-
-class PlayerLeft(Exception):
-    """Raised when the player has not touched the joystick for IDLE_TIMEOUT seconds."""
 
 
 def dim(color, amount):
@@ -395,25 +384,16 @@ def tally_frame(tally):
     return frame
 
 
-def wait(stick, seconds, human):
-    """Wait `seconds` while listening to the joystick; returns what was pressed.
-
-    During the demo any touch raises TakeOver, and when the player has walked
-    away it raises PlayerLeft, so the game can switch over at once.
-    """
+def wait(stick, seconds):
+    """Wait `seconds` while listening to the joystick; returns what was pressed."""
     pressed = []
     for _ in range(max(1, round(seconds / TICK))):
-        keys = stick.read()
-        if keys and not human:
-            raise TakeOver()
-        if human and stick.idle():
-            raise PlayerLeft()
-        pressed += keys
+        pressed += stick.read()
         time.sleep(TICK)
     return pressed
 
 
-def flip(sense, stick, human, side):
+def flip(sense, stick, side):
     """Toss the coin: it flies up spinning, falls back, wobbles and lies still.
 
     The result is decided first (a fair 50/50 chance); then the number of half
@@ -433,25 +413,25 @@ def flip(sense, stick, human, side):
         showing = side if turn >= 0 else other(side)
         sense.set_pixels(flatten(coin_frame(showing, 8 * abs(turn), 4 - up,
                                             0.45 + 0.55 * abs(turn))))
-        wait(stick, TICK, human)
+        wait(stick, TICK)
     # It lands with a few wobbles, smaller every time
     for squash in (0.3, 0.15, 0.05):
         for height in (8 - 8 * squash, 8):
             sense.set_pixels(flatten(coin_frame(result, height, 4)))
-            wait(stick, 0.06, human)
+            wait(stick, 0.06)
     # And a glint of light sweeps over it
     for step in range(-2, 17):
         sense.set_pixels(flatten(glint_frame(result, step)))
-        wait(stick, 0.03, human)
+        wait(stick, 0.03)
     sense.set_pixels(flatten(side_picture(result)))
     return result
 
 
-def show_tally(sense, stick, human, tally, side):
+def show_tally(sense, stick, tally, side):
     """Show the tally for TALLY_TIME seconds (or until the next press)."""
     sense.set_pixels(flatten(tally_frame(tally)))
     for _ in range(round(TALLY_TIME / TICK)):
-        keys = wait(stick, TICK, human)
+        keys = wait(stick, TICK)
         if keys:
             sense.set_pixels(flatten(side_picture(side)))
             return keys
@@ -459,57 +439,33 @@ def show_tally(sense, stick, human, tally, side):
     return []
 
 
-def play(sense, stick, human):
-    """Flip the coin until the demo is interrupted or the player walks away.
-
-    In the demo the computer flips every DEMO_PAUSE seconds and shows the
-    tally after every third flip. Raises TakeOver or PlayerLeft.
-    """
+def play(sense, stick):
+    """Wait for the joystick and flip the coin, forever."""
     side = random.choice((HEADS, TAILS))
     tally = {HEADS: 0, TAILS: 0}
     sense.set_pixels(flatten(side_picture(side)))
     while True:
-        if human:
-            keys = wait(stick, TICK, True)
-        else:
-            wait(stick, DEMO_PAUSE, False)
-            keys = ["middle"]
-        for key in keys:
+        for key in wait(stick, TICK):
             if key in FLIP_KEYS:
-                side = flip(sense, stick, human, side)
+                side = flip(sense, stick, side)
                 tally[side] += 1
                 stick.read()                  # Forget presses made while the coin flew
-                if not human and sum(tally.values()) % 3 == 0:
-                    wait(stick, 1.0, False)
-                    show_tally(sense, stick, False, tally, side)
                 break
             if key in ("up", "down"):
                 # Showing the tally; a press during it is handled right away
-                more = show_tally(sense, stick, human, tally, side)
+                more = show_tally(sense, stick, tally, side)
                 if any(k in FLIP_KEYS for k in more):
-                    side = flip(sense, stick, human, side)
+                    side = flip(sense, stick, side)
                     tally[side] += 1
                     stick.read()
                 break
 
 
 def main():
-    """Flip forever: the computer flips until someone takes the joystick."""
+    """Show the coin and flip it whenever the joystick is pressed."""
     sense = init(hat)
     stick = Joystick(sense)
-    human = False
-    while True:
-        try:
-            play(sense, stick, human)
-        except TakeOver:
-            # Someone touched the joystick during the demo: their turn, with a fresh tally
-            show_play_sign(sense)
-            stick.flush()
-            human = True
-        except PlayerLeft:
-            # Nobody touched the joystick for a while: back to the demo
-            human = False
-            stick.flush()
+    play(sense, stick)
 
 
 if __name__ == "__main__":

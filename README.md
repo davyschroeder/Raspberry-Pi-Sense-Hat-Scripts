@@ -35,7 +35,8 @@ Little animations and games for the 8×8 LED matrix of the
 | `tetris.py` | Classic falling blocks in an 8×8 well |
 
 Every game starts as a demo in which the computer plays, until you grab the
-joystick: see [Playing the games yourself](#playing-the-games-yourself).
+joystick: see [Playing the games yourself](#playing-the-games-yourself). Dice and
+Heads or tails have no demo: they wait for you.
 
 ## Requirements
 
@@ -74,7 +75,8 @@ is still running, so you can simply switch from one animation to the next.
 Every game starts as a demo in which the computer plays. Touch the Sense HAT
 joystick and a green play sign appears: now you're in control. After game over,
 or when you leave the joystick alone for 30 seconds, the computer takes over
-again.
+again. Dice (`dice.py`) and Heads or tails (`coin_flip.py`) have no demo: they
+simply wait until you press the joystick.
 
 | Game | Controls |
 | --- | --- |

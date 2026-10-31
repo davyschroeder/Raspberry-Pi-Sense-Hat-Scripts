@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Sense HAT – Dice: roll a D4, D6, D8, D10, D12 or D20, or two six-sided dice.
 
-The computer rolls now and then until you touch the joystick: then it's your
-turn. Push the joystick left or right to pick a die (its name scrolls by
+Push the joystick left or right to pick a die (its name scrolls by
 first, like "D12", and every die you pick gets a new random colour), up or
 down to change its colour, and press it to roll. The die tumbles over and
 over, slower and slower, before it lands; rolling the highest number makes it
-flash gold, and so does a double with two dice. After 30 seconds without input
-the computer rolls again.
+flash gold, and so does a double with two dice. The dice wait for you: there
+is no demo.
 """
 import atexit
 import os
@@ -279,7 +278,6 @@ OFF = (0, 0, 0)
 PIP = (255, 255, 255)                     # The dots and numbers on the dice
 GOLD = (255, 190, 0)                      # The highest roll (and a double) flashes gold
 TICK = 0.02                               # Seconds per step while waiting
-DEMO_PAUSE = 2.5                          # Seconds between two rolls in the demo
 ROLL_STEPS = 22                           # How many times the big die tumbles over
 TUMBLE_STEPS = 28                         # How many hops the two small dice make
 SCROLL_STEP = 0.055                       # Seconds per pixel while a die's name scrolls by
@@ -344,14 +342,6 @@ FONT = {
     "D": ["##.", "#.#", "#.#", "#.#", "##."],
     "x": ["...", "#.#", ".#.", "#.#", "..."],
 }
-
-
-class TakeOver(Exception):
-    """Raised during the demo when someone touches the joystick."""
-
-
-class PlayerLeft(Exception):
-    """Raised when the player has not touched the joystick for IDLE_TIMEOUT seconds."""
 
 
 def dim(color, amount):
@@ -457,25 +447,16 @@ def new_value(old, sides=6):
     return random.choice([v for v in range(1, sides + 1) if v != old])
 
 
-def wait(stick, seconds, human):
-    """Wait `seconds` while listening to the joystick; returns what was pressed.
-
-    During the demo any touch raises TakeOver, and when the player has walked
-    away it raises PlayerLeft, so the game can switch over at once.
-    """
+def wait(stick, seconds):
+    """Wait `seconds` while listening to the joystick; returns what was pressed."""
     pressed = []
     for _ in range(max(1, round(seconds / TICK))):
-        keys = stick.read()
-        if keys and not human:
-            raise TakeOver()
-        if human and stick.idle():
-            raise PlayerLeft()
-        pressed += keys
+        pressed += stick.read()
         time.sleep(TICK)
     return pressed
 
 
-def show_name(sense, stick, human, name, color):
+def show_name(sense, stick, name, color):
     """Scroll the name of the chosen die (like "D12") across the display, in its colour.
 
     Returns the joystick moves made meanwhile, so a quick second push still counts.
@@ -489,11 +470,11 @@ def show_name(sense, stick, human, name, color):
                 if lit:
                     frame[y + 1][x] = color
         sense.set_pixels(flatten(frame))
-        pressed += wait(stick, SCROLL_STEP, human)
+        pressed += wait(stick, SCROLL_STEP)
     return pressed
 
 
-def roll_big(sense, stick, human, sides, value, body):
+def roll_big(sense, stick, sides, value, body):
     """Let the big die tumble over and over, slower and slower, and land.
 
     Returns the value it lands on. The highest number flashes gold.
@@ -506,17 +487,17 @@ def roll_big(sense, stick, human, sides, value, body):
         for f in range(1, frames + 1):
             sense.set_pixels(flatten(tumble_frame(big_die(sides, value, body), big_die(sides, new, body),
                                                   direction, f / (frames + 1))))
-            wait(stick, 0.02 + 0.03 * slow, human)
+            wait(stick, 0.02 + 0.03 * slow)
         value = new
         sense.set_pixels(flatten(big_die(sides, value, body)))
-        wait(stick, 0.03 + 0.3 * slow * slow, human)
+        wait(stick, 0.03 + 0.3 * slow * slow)
     # It landed: the pips or the number light up gold for a moment
     flashes = 3 if value == sides else 1
     for _ in range(flashes):
         sense.set_pixels(flatten(big_die(sides, value, body, GOLD)))
-        wait(stick, 0.15, human)
+        wait(stick, 0.15)
         sense.set_pixels(flatten(big_die(sides, value, body)))
-        wait(stick, 0.15 if flashes > 1 else 0, human)
+        wait(stick, 0.15 if flashes > 1 else 0)
     return value
 
 
@@ -525,7 +506,7 @@ def separated(a, b):
     return abs(a[0] - b[0]) >= 4 or abs(a[1] - b[1]) >= 4
 
 
-def roll_small(sense, stick, human, values, places, body):
+def roll_small(sense, stick, values, places, body):
     """Shake the two small dice across the display: with every hop they jump
     to a new spot (they may fly over each other), slower and slower, then they
     roll to two separate places and come to rest.
@@ -555,29 +536,24 @@ def roll_small(sense, stick, human, values, places, body):
         values = [new_value(v) for v in values]
         sense.set_pixels(flatten(small_dice(values, places, body)))
         slow = step / TUMBLE_STEPS
-        wait(stick, 0.05 + 0.28 * slow * slow, human)
+        wait(stick, 0.05 + 0.28 * slow * slow)
     if values[0] == values[1]:
         # A double: the pips flash gold
         for _ in range(3):
             sense.set_pixels(flatten(small_dice(values, places, body, GOLD)))
-            wait(stick, 0.15, human)
+            wait(stick, 0.15)
             sense.set_pixels(flatten(small_dice(values, places, body)))
-            wait(stick, 0.15, human)
+            wait(stick, 0.15)
     return values, places
 
 
-def play(sense, stick, human):
-    """Roll the dice until the demo is interrupted or the player walks away.
-
-    In the demo the computer rolls every DEMO_PAUSE seconds and now and then
-    picks another die or colour. Raises TakeOver or PlayerLeft.
-    """
+def play(sense, stick):
+    """Wait for the joystick and roll the dice, forever."""
     choice = START_DIE                       # Which die of DICE is picked
     color = random.randrange(len(COLORS))    # Which colour of COLORS it has
     last = {sides: random.randint(1, sides) for sides in DICE if sides}   # What each die shows
     pair = [random.randint(1, 6), random.randint(1, 6)]
     places = [(0, 1), (5, 4)]
-    rolls = 0
 
     def show():
         """Draw the dice as they are now."""
@@ -594,22 +570,13 @@ def play(sense, stick, human):
         choice = (choice + step) % len(DICE)
         color = random.choice([c for c in range(len(COLORS)) if c != color])
         sides = DICE[choice]
-        more = show_name(sense, stick, human, "D%d" % sides if sides else "2xD6", COLORS[color])
+        more = show_name(sense, stick, "D%d" % sides if sides else "2xD6", COLORS[color])
         show()
         return more
 
     show()
     while True:
-        if human:
-            keys = wait(stick, TICK, True)
-        else:
-            wait(stick, DEMO_PAUSE, False)
-            rolls += 1
-            keys = ["middle"]
-            if rolls % 3 == 0:               # Now and then the computer picks another die
-                keys = [random.choice(("left", "right", "right")), "middle"]
-            elif rolls % 3 == 1 and rolls > 1:   # ... or another colour
-                keys = [random.choice(("up", "down")), "middle"]
+        keys = wait(stick, TICK)
         while keys:
             key = keys.pop(0)
             if key in ("left", "right"):
@@ -620,30 +587,18 @@ def play(sense, stick, human):
             elif key == "middle":
                 sides = DICE[choice]
                 if sides:
-                    last[sides] = roll_big(sense, stick, human, sides, last[sides], COLORS[color])
+                    last[sides] = roll_big(sense, stick, sides, last[sides], COLORS[color])
                 else:
-                    pair, places = roll_small(sense, stick, human, pair, places, COLORS[color])
+                    pair, places = roll_small(sense, stick, pair, places, COLORS[color])
                 stick.read()                 # Forget presses made while the dice rolled
                 break
 
 
 def main():
-    """Roll forever: the computer rolls until someone takes the joystick."""
+    """Show the die and roll it whenever the joystick is pressed."""
     sense = init(hat)
     stick = Joystick(sense)
-    human = False
-    while True:
-        try:
-            play(sense, stick, human)
-        except TakeOver:
-            # Someone touched the joystick during the demo: their turn
-            show_play_sign(sense)
-            stick.flush()
-            human = True
-        except PlayerLeft:
-            # Nobody touched the joystick for a while: back to the demo
-            human = False
-            stick.flush()
+    play(sense, stick)
 
 
 if __name__ == "__main__":
