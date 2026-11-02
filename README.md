@@ -17,7 +17,7 @@ Little animations and games for the 8×8 LED matrix of the
 | Script | What it is |
 | --- | --- |
 | `block_attack.py` | Swap blocks in a rising stack to make rows of three and set off chains |
-| `bomberman.py` | Drop bombs to blow up bricks and monsters, collect power-ups and find the hidden exit, level after level |
+| `bomberman.py` | Drop bombs to blow up bricks and monsters, collect power-ups and find the hidden exit, level after level; the arena grows every level and scrolls along with you |
 | `breakout.py` | Smash the bricks with ball and paddle through 8 levels, with silver and gold bricks and power-up capsules (wider paddle, catch, laser, slow, three balls, level exit, extra life) |
 | `coin_flip.py` | Heads or tails: a spinning coin flies up, turns from gold to silver and back, and wobbles to a stop on a smiling head or a 1, with a tally of every flip |
 | `dice.py` | Roll a D4, D6, D8, D10, D12 or D20 that tumbles over and over, or two six-sided dice that bounce across the display; every die gets a random colour, the highest number and doubles flash gold |

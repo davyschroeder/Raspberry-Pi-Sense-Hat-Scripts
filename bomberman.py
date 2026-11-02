@@ -10,6 +10,10 @@ hides the exit (cyan): it opens and blinks once every monster is gone, and
 walking into it takes you to the next level, with more and faster monsters.
 Touching a monster costs a life. You have 3 lives.
 
+The arena grows with every level: level 1 fits on the display, after that it
+is bigger than the 8x8 LEDs and the view scrolls along with you (up to 15x13
+squares from level 4 on). Every level has more monsters, and faster ones.
+
 Points: 10 per brick, 100 per monster, 500 per level.
 
 The computer plays a demo until you touch the joystick: then you play.
@@ -307,10 +311,17 @@ SAFE_TIME = 1.5                  # Seconds you can't be hurt after coming back
 MAX_BOMBS, MAX_RANGE = 3, 4
 AI_MISTAKE = 0.003               # Chance per tick (50 a second) the computer wanders off
 AI_FORECAST_RUNS = 24            # How many times the computer imagines each monster's walk ...
-AI_FORECAST_STEPS = 8            # ... and for how many monster steps ahead
+AI_FORECAST_STEPS = 12           # ... and for how many monster steps ahead
 AI_KILL_CHANCE = 0.45            # Drop a bomb for a monster when it's at least this likely to hit
 AI_KILL_WEIGHT = 6               # A likely monster hit is worth this many bricks when choosing a spot
+AI_LANE_WEIGHT = 6               # ... and a spot whose blast monsters will likely walk through soon this much
 AI_THREAT = 0.2                  # Stay away from squares a monster will likely reach this soon (chance)
+
+# Arena size (width, height) per level; from the last one on it stays that size.
+# Odd sizes keep the outer rows and columns free of pillars.
+ARENA_SIZES = [(8, 8), (11, 9), (13, 11), (15, 13)]
+VIEW_MARGIN = 2                  # The view scrolls when you come this close to its edge
+ARENA = [8, 8]                   # The size of the current arena (set by next_level())
 
 DIRS = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 KEYS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
@@ -322,7 +333,7 @@ def is_pillar(x, y):
 
 
 def inside(x, y):
-    return 0 <= x <= 7 and 0 <= y <= 7
+    return 0 <= x < ARENA[0] and 0 <= y < ARENA[1]
 
 
 class Bomb:
@@ -352,7 +363,8 @@ class Game:
     # ---------- level set-up ----------
     def next_level(self):
         self.level += 1
-        free = [(x, y) for y in range(8) for x in range(8) if not is_pillar(x, y)]
+        ARENA[:] = ARENA_SIZES[min(self.level, len(ARENA_SIZES)) - 1]
+        free = [(x, y) for y in range(ARENA[1]) for x in range(ARENA[0]) if not is_pillar(x, y)]
         near_start = {(0, 0), (1, 0), (0, 1), (2, 0), (0, 2)}
         spots = [c for c in free if c not in near_start]
         self.bricks = {c for c in spots if random.random() < BRICK_CHANCE}
@@ -360,7 +372,8 @@ class Game:
         self.exit = hidden[0]
         self.items = {hidden[1]: "bomb", hidden[2]: "fire"} if len(hidden) == 3 else {}
         open_far = [c for c in spots if c not in self.bricks and abs(c[0]) + abs(c[1]) >= 6]
-        count = min(len(open_far), 1 + self.level, 6)
+        # One more monster every level, up to one for every 15 free squares
+        count = min(len(open_far), 1 + self.level, max(6, len(free) // 15))
         self.monsters = [Monster(*c) for c in random.sample(open_far, count)]
         self.monster_delay = max(MIN_MONSTER_DELAY, MONSTER_DELAY * 0.9 ** (self.level - 1))
         self.monster_timer = 0.0
@@ -368,6 +381,7 @@ class Game:
 
     def respawn(self):
         self.player = list(START)
+        self.view = [0, 0]            # Top-left square of the arena that the display shows
         self.bombs = []
         self.fire = {}                # (x, y) -> seconds left
         self.move_timer = 0.0
@@ -578,6 +592,15 @@ class Game:
         hit = self.blast_cells(Bomb(cell[0], cell[1], self.reach))
         return sum(when.get(c, 0) for c in hit)
 
+    def lane_chance(self, cell, wait=0.0):
+        """How likely monsters walk through the blast of a bomb at `cell` in the
+        few steps after the computer gets there: a good spot to wait for them."""
+        maps = self.forecast()
+        k = self.monster_steps(wait)
+        hit = self.blast_cells(Bomb(cell[0], cell[1], self.reach))
+        window = maps[k:k + 5] or maps[-1:]
+        return max(sum(m.get(c, 0) for c in hit) for m in window)
+
     def bricks_hit(self, cell):
         """How many bricks a bomb at `cell` would blow up."""
         return sum(1 for c in self.blast_cells(Bomb(cell[0], cell[1], self.reach))[1:] if c in self.bricks)
@@ -629,44 +652,70 @@ class Game:
             if move:
                 return move, False
 
-        # 5. Walk to the best square for a bomb: a likely monster hit counts
-        #    AI_KILL_WEIGHT bricks, and every step on the way costs a little
+        # 5. Walk to the best square for a bomb. Monsters come first: a likely
+        #    hit counts AI_KILL_WEIGHT bricks, and a spot whose blast they will
+        #    probably walk through soon (a good place to wait for them) counts
+        #    AI_LANE_WEIGHT. So it goes after the monsters all through the level,
+        #    not only once the bricks are gone. Every step on the way costs a little.
         steps = self.bfs(here, avoid)
         best, best_value = None, 0.0
+        here_value = self.lane_chance(here) * AI_LANE_WEIGHT
         for cell, (first, dist) in steps.items():
             if cell == here:
                 continue
-            chance = self.kill_chance(cell, dist * AI_MOVE_DELAY)
-            value = chance * AI_KILL_WEIGHT * (chance >= AI_KILL_CHANCE / 2) + self.bricks_hit(cell) - dist * 0.15
+            wait = dist * AI_MOVE_DELAY
+            value = (self.kill_chance(cell, wait) * AI_KILL_WEIGHT + self.lane_chance(cell, wait) * AI_LANE_WEIGHT
+                     + self.bricks_hit(cell) - dist * 0.15)
             if value > best_value:
                 best, best_value = first, value
+        if here_value >= best_value and self.monsters:
+            return None, False                 # A good spot: wait here for a monster to come by
         return best, False
 
     # ---------- drawing ----------
+    def scroll(self):
+        """Move the view along when you come within VIEW_MARGIN squares of its edge."""
+        for axis in (0, 1):
+            size = ARENA[axis]
+            p = self.player[axis] - self.view[axis]
+            if p < VIEW_MARGIN:
+                self.view[axis] += p - VIEW_MARGIN
+            elif p > 7 - VIEW_MARGIN:
+                self.view[axis] += p - (7 - VIEW_MARGIN)
+            self.view[axis] = max(0, min(size - 8, self.view[axis]))
+
     def draw(self, sense, player=True):
+        """Draw the part of the arena that is in view."""
+        self.scroll()
+        vx, vy = self.view
         frame = [[FLOOR] * 8 for _ in range(8)]
-        for y in range(8):
-            for x in range(8):
+
+        def put(x, y, color):
+            if 0 <= x - vx < 8 and 0 <= y - vy < 8:
+                frame[y - vy][x - vx] = color
+
+        for y in range(vy, vy + 8):
+            for x in range(vx, vx + 8):
                 if is_pillar(x, y):
-                    frame[y][x] = PILLAR
+                    put(x, y, PILLAR)
         if self.exit not in self.bricks:
             open_ = not self.monsters
-            frame[self.exit[1]][self.exit[0]] = (EXIT_OPEN if (self.ticks // 10) % 2 else EXIT_CLOSED) if open_ else EXIT_CLOSED
+            put(*self.exit, (EXIT_OPEN if (self.ticks // 10) % 2 else EXIT_CLOSED) if open_ else EXIT_CLOSED)
         for (x, y), kind in self.items.items():
             if (x, y) not in self.bricks and (self.ticks // 8) % 2 == 0:
-                frame[y][x] = ITEM_COLORS[kind]
+                put(x, y, ITEM_COLORS[kind])
         for x, y in self.bricks:
-            frame[y][x] = BRICK
+            put(x, y, BRICK)
         for b in self.bombs:
             fast = b.fuse < 0.6
             blink = (self.ticks // (3 if fast else 10)) % 2
-            frame[b.y][b.x] = BOMB_HOT if blink else BOMB
+            put(b.x, b.y, BOMB_HOT if blink else BOMB)
         for (x, y) in self.fire:
-            frame[y][x] = FIRE
+            put(x, y, FIRE)
         for m in self.monsters:
-            frame[m.y][m.x] = MONSTER
+            put(m.x, m.y, MONSTER)
         if player and (self.safe == 0 or (self.ticks // 5) % 2 == 0):
-            frame[self.player[1]][self.player[0]] = PLAYER
+            put(self.player[0], self.player[1], PLAYER)
         sense.set_pixels(flatten(frame))
 
 
@@ -701,7 +750,7 @@ def play_game(sense, stick, human):
             game.lives -= 1
             for _ in range(3):
                 game.draw(sense, player=False)
-                sense.set_pixel(game.player[0], game.player[1], (255, 0, 0))
+                sense.set_pixel(game.player[0] - game.view[0], game.player[1] - game.view[1], (255, 0, 0))
                 time.sleep(0.15)
                 game.draw(sense, player=False)
                 time.sleep(0.15)
