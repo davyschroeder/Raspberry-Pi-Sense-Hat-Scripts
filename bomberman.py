@@ -306,6 +306,11 @@ BRICK_CHANCE = 0.5               # Share of the free squares that start as a bri
 SAFE_TIME = 1.5                  # Seconds you can't be hurt after coming back
 MAX_BOMBS, MAX_RANGE = 3, 4
 AI_MISTAKE = 0.003               # Chance per tick (50 a second) the computer wanders off
+AI_FORECAST_RUNS = 24            # How many times the computer imagines each monster's walk ...
+AI_FORECAST_STEPS = 8            # ... and for how many monster steps ahead
+AI_KILL_CHANCE = 0.45            # Drop a bomb for a monster when it's at least this likely to hit
+AI_KILL_WEIGHT = 6               # A likely monster hit is worth this many bricks when choosing a spot
+AI_THREAT = 0.2                  # Stay away from squares a monster will likely reach this soon (chance)
 
 DIRS = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 KEYS = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
@@ -499,11 +504,16 @@ class Game:
         return found
 
     def near_monsters(self):
+        """Squares that aren't safe because of monsters: where they are, right
+        next to them, and where they will likely be in the next two steps."""
         cells = set()
         for m in self.monsters:
             cells.add((m.x, m.y))
             for dx, dy in DIRS:
                 cells.add((m.x + dx, m.y + dy))
+        maps = self.forecast()
+        for k in (1, 2):
+            cells.update(c for c, chance in maps[k].items() if chance >= AI_THREAT)
         return cells
 
     def worth_bombing(self, cell):
@@ -518,11 +528,59 @@ class Game:
         bombs = self.bombs + [Bomb(cell[0], cell[1], self.reach)]
         danger = self.danger_cells(bombs, self.bricks)
         monsters = {(m.x, m.y) for m in self.monsters}
-        steps = self.bfs(tuple(cell), monsters | set(self.fire))
-        limit = int((min(b.fuse for b in bombs) - 0.3) / AI_MOVE_DELAY)
+        steps = self.bfs(tuple(cell), monsters | set(self.fire) | (self.near_monsters() - {tuple(cell)}))
+        limit = int((min(b.fuse for b in bombs) - 0.6) / AI_MOVE_DELAY)
         threat = self.near_monsters()
         return any(dist <= limit for target, (_, dist) in steps.items()
                    if target not in danger and target not in threat)
+
+    def forecast(self):
+        """Where the monsters will probably be in the coming steps.
+
+        The computer imagines every monster's walk AI_FORECAST_RUNS times, with
+        the same rules the monsters follow (straight on, now and then a turn at a
+        crossing, never into fire or through a bomb). The share of walks that
+        pass a square says how likely the monster is there.
+
+        Returns a list: item k is {cell: expected number of monsters there}
+        after k more monster steps (k = 0 is now). It is remembered until the
+        monsters, bombs or bricks change, because it takes some thinking.
+        """
+        key = (tuple((m.x, m.y, m.direction) for m in self.monsters),
+               tuple((b.x, b.y) for b in self.bombs), len(self.bricks), tuple(sorted(self.fire)))
+        if getattr(self, "_forecast_key", None) == key:
+            return self._forecast
+        maps = [dict() for _ in range(AI_FORECAST_STEPS + 1)]
+        share = 1 / AI_FORECAST_RUNS
+        for m in self.monsters:
+            for _ in range(AI_FORECAST_RUNS):
+                ghost = Monster(m.x, m.y)
+                ghost.direction = m.direction
+                for k in range(AI_FORECAST_STEPS + 1):
+                    cell = (ghost.x, ghost.y)
+                    maps[k][cell] = maps[k].get(cell, 0) + share
+                    self.move_monster(ghost)
+        self._forecast_key, self._forecast = key, maps
+        return maps
+
+    def monster_steps(self, seconds):
+        """How many times the monsters step in the coming `seconds`."""
+        first = self.monster_delay - self.monster_timer
+        if seconds < first:
+            return 0
+        return min(AI_FORECAST_STEPS, 1 + int((seconds - first) / self.monster_delay))
+
+    def kill_chance(self, cell, wait=0.0):
+        """How many monsters a bomb dropped at `cell` in `wait` seconds will
+        probably hit when it goes off (0.5 means a fifty-fifty chance for one)."""
+        maps = self.forecast()
+        when = maps[self.monster_steps(wait + FUSE)]
+        hit = self.blast_cells(Bomb(cell[0], cell[1], self.reach))
+        return sum(when.get(c, 0) for c in hit)
+
+    def bricks_hit(self, cell):
+        """How many bricks a bomb at `cell` would blow up."""
+        return sum(1 for c in self.blast_cells(Bomb(cell[0], cell[1], self.reach))[1:] if c in self.bricks)
 
     def step_towards(self, goals, avoid):
         steps = self.bfs(tuple(self.player), avoid)
@@ -539,7 +597,10 @@ class Game:
         danger = self.danger_cells(self.bombs, self.bricks)
         threat = self.near_monsters()
         if random.random() < AI_MISTAKE:
-            return random.choice(DIRS), False
+            # Now and then a careless step, but never into a blast or next to a monster
+            careless = [d for d in DIRS if (here[0] + d[0], here[1] + d[1]) not in danger | threat]
+            if careless and here not in danger:
+                return random.choice(careless), False
 
         # 1. Standing in a blast or next to a monster: get out
         if here in danger or here in threat:
@@ -547,8 +608,13 @@ class Game:
                     if c not in danger and c not in threat]
             return self.step_towards(safe, set(self.fire) | {(m.x, m.y) for m in self.monsters}), False
 
-        # 2. A good spot for a bomb, with a way out: drop it
-        if len(self.bombs) < self.max_bombs and self.worth_bombing(here) and self.escape_exists(here):
+        # 2. A good spot for a bomb, with a way out: drop it. Monsters move, so
+        #    the computer drops a bomb for them where they will probably be when
+        #    it goes off (see forecast()), not where they are now.
+        can_bomb = len(self.bombs) < self.max_bombs
+        if can_bomb and self.kill_chance(here) >= AI_KILL_CHANCE and self.escape_exists(here):
+            return None, True
+        if can_bomb and self.bricks_hit(here) and self.escape_exists(here):
             return None, True
 
         avoid = danger | threat
@@ -563,13 +629,18 @@ class Game:
             if move:
                 return move, False
 
-        # 5. Walk to the nearest square where a bomb would be useful
+        # 5. Walk to the best square for a bomb: a likely monster hit counts
+        #    AI_KILL_WEIGHT bricks, and every step on the way costs a little
         steps = self.bfs(here, avoid)
-        targets = [c for c in steps if self.worth_bombing(c)]
-        if not self.monsters and self.exit not in self.bricks:
-            targets = [self.exit]
-        move = self.step_towards(targets, avoid)
-        return move, False
+        best, best_value = None, 0.0
+        for cell, (first, dist) in steps.items():
+            if cell == here:
+                continue
+            chance = self.kill_chance(cell, dist * AI_MOVE_DELAY)
+            value = chance * AI_KILL_WEIGHT * (chance >= AI_KILL_CHANCE / 2) + self.bricks_hit(cell) - dist * 0.15
+            if value > best_value:
+                best, best_value = first, value
+        return best, False
 
     # ---------- drawing ----------
     def draw(self, sense, player=True):
