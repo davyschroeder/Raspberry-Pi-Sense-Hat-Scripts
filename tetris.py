@@ -406,10 +406,17 @@ class Game:
         rotation next to the edge doesn't just fail.
         """
         rotation = (self.rotation + 1) % len(ROTATIONS[self.piece]) if rotate else self.rotation
-        for kick in ((0, 1, -1) if rotate else (0,)):      # Rotating next to a wall: shift a bit
-            if self.fits(rotation, self.x + dx + kick, self.y):
-                self.rotation, self.x = rotation, self.x + dx + kick
-                return True
+        # The long piece turns upward: standing up, its bottom block stays in the row
+        # it was lying in (so it never pokes into the stack below), and lying down
+        # again it drops back to its bottom row.
+        lifts = [0]
+        if rotate and self.piece == "I":
+            lifts = [-3, 0] if rotation == 1 else [3, 0]
+        for dy in lifts:
+            for kick in ((0, 1, -1) if rotate else (0,)):      # Rotating next to a wall: shift a bit
+                if self.fits(rotation, self.x + dx + kick, self.y + dy):
+                    self.rotation, self.x, self.y = rotation, self.x + dx + kick, self.y + dy
+                    return True
         return False
 
     def drop_y(self, rotation, x, board=None):
