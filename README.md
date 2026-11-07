@@ -10,7 +10,7 @@ Little animations and games for the 8×8 LED matrix of the
 | `beating_heart.py` | A red heart pulsing like a heartbeat |
 | `cpu_temp.py` | The Pi's CPU temperature as two digits plus a bar, green to red. A wild flame flares up when it runs hot; a happy ^_^ face pops up when it stays cool |
 | `firefly.py` | Softly coloured fireflies drifting and glowing in the dark |
-| `fireworks.py` | A fireworks show: rockets climb up with a spark trail and burst into peonies, rings, willows, palms, crossettes, crackles and even hearts, lighting up the sky, with a grand finale every 40 to 55 seconds. Push the joystick and every arrow instantly sets off a big rainbow explosion on its side of the sky; left / right also launch a rocket from that side, up a salvo of three, down the finale, and a press launches a rocket from a random spot |
+| `fireworks.py` | A fireworks show: rockets climb up with a spark trail and burst into peonies, rings, willows, palms, crossettes, crackles and even hearts, lighting up the sky, with a grand finale every 40 to 55 seconds. Push the joystick and every arrow instantly sets off two round, bright-coloured circles high in the sky; left / right also launch a rocket from that side, up a salvo of three, down the finale, and a press launches a rocket from a random spot |
 | `matrix.py` | Green "Matrix" code rain with the odd flicker |
 
 ### Games

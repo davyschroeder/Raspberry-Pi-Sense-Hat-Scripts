@@ -3,7 +3,7 @@
 trails and ten kinds of bursts, ending every so often in a grand finale.
 
 Push the joystick to set off your own fireworks. Every arrow instantly sets
-off a big rainbow-coloured explosion on its side of the sky, and:
+off two round, bright-coloured circles high in the sky, and:
   left / right  - also launches a rocket from that side
   up            - also fires a salvo of three rockets
   down          - also starts the grand finale
@@ -316,21 +316,20 @@ def strobe(show, x, y):
     show.flash(WHITE, 0.25)
 
 
-def rainbow(show, x, y):
-    """A big explosion in which every spark has its own colour (the joystick's burst)."""
-    # Six bright colours, each filling its own slice of the ring, so the
-    # colours stay pure instead of blending into pastel where sparks overlap
-    hues = random.sample(COLOURS[:-1], 6)  # Every colour except white
-    for k, (vx, vy) in enumerate(ring_of(30, 6.0, 0.08)):
-        show.add(Particle(x, y, vx, vy, hues[k // 5], random.uniform(1.3, 1.7),
-                          drag=1.6, bright=1.2))
-    for vx, vy in ring_of(10, 2.5, 0.2):  # A white-hot core
-        show.add(Particle(x, y, vx, vy, WHITE, 0.6, drag=2.5, gravity=0.3))
-    show.flash((255, 220, 255), 0.6)
+def circles(show, x, y):
+    """The joystick's burst: two round, bright circles in two colours, one
+    inside the other. All sparks fly out equally fast and hardly fall, so the
+    circles stay perfectly round."""
+    outer, inner = random.sample(COLOURS[:-1], 2)  # Two colours, never white
+    for vx, vy in ring_of(28, 5.4):   # Grows to a circle about 5 LEDs wide
+        show.add(Particle(x, y, vx, vy, outer, 1.4, drag=2.2, gravity=0.1, bright=1.2))
+    for vx, vy in ring_of(14, 2.6):   # A smaller circle inside it
+        show.add(Particle(x, y, vx, vy, inner, 1.4, drag=2.2, gravity=0.1, bright=1.2))
+    show.flash(outer, 0.45)
 
 
-# Where the joystick's rainbow explosion goes off for each arrow (x, y)
-ARROW_SPOTS = {"left": (1.8, 3.5), "right": (5.2, 3.5), "up": (3.5, 2.0), "down": (3.5, 4.8)}
+# Where the joystick's circles go off for each arrow (x, y): high in the sky
+ARROW_SPOTS = {"left": (2.0, 2.5), "right": (5.0, 2.5), "up": (3.5, 2.5), "down": (3.5, 2.5)}
 
 
 # How often each burst is picked (bigger number = more often)
@@ -428,7 +427,7 @@ class Show:
                 continue
             if event.direction in ARROW_SPOTS:
                 x, y = ARROW_SPOTS[event.direction]
-                rainbow(self, x + random.uniform(-0.4, 0.4), y + random.uniform(-0.4, 0.4))
+                circles(self, x + random.uniform(-0.3, 0.3), y + random.uniform(-0.2, 0.2))
             if event.direction == "left":
                 self.launch(random.uniform(0.8, 2.2))
             elif event.direction == "right":
