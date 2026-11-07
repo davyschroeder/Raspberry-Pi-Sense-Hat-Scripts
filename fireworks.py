@@ -318,12 +318,12 @@ def strobe(show, x, y):
 
 def rainbow(show, x, y):
     """A big explosion in which every spark has its own colour (the joystick's burst)."""
-    hues = COLOURS[:-1]  # Every colour except white
-    turn = random.randrange(len(hues))
-    for k, (vx, vy) in enumerate(ring_of(32, 6.0, 0.12)):
-        colour = hues[(k + turn) % len(hues)]
-        show.add(Particle(x, y, vx, vy, colour, random.uniform(1.3, 1.7), drag=1.6,
-                          colour2=hues[(k + turn + 3) % len(hues)], bright=1.15))
+    # Six bright colours, each filling its own slice of the ring, so the
+    # colours stay pure instead of blending into pastel where sparks overlap
+    hues = random.sample(COLOURS[:-1], 6)  # Every colour except white
+    for k, (vx, vy) in enumerate(ring_of(30, 6.0, 0.08)):
+        show.add(Particle(x, y, vx, vy, hues[k // 5], random.uniform(1.3, 1.7),
+                          drag=1.6, bright=1.2))
     for vx, vy in ring_of(10, 2.5, 0.2):  # A white-hot core
         show.add(Particle(x, y, vx, vy, WHITE, 0.6, drag=2.5, gravity=0.3))
     show.flash((255, 220, 255), 0.6)
