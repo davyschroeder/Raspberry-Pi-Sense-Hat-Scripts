@@ -2,11 +2,12 @@
 """Sense HAT – Fireworks: a full fireworks show with rockets, flashes, glowing
 trails and ten kinds of bursts, ending every so often in a grand finale.
 
-Push the joystick to set off your own rockets:
-  left / right  - launch a rocket from that side
-  press         - launch a rocket from a random spot
-  up            - a salvo of three rockets at once
-  down          - start the grand finale right now
+Push the joystick to set off your own fireworks. Every arrow instantly sets
+off a big rainbow-coloured explosion on its side of the sky, and:
+  left / right  - also launches a rocket from that side
+  up            - also fires a salvo of three rockets
+  down          - also starts the grand finale
+  press         - launches a rocket from a random spot
 """
 import atexit
 import math
@@ -85,7 +86,7 @@ FPS = 30                 # Frames per second
 FRAME_DELAY = 1 / FPS
 GRAVITY = 5.0            # How fast things fall, in LEDs per second per second
 AFTERGLOW = 0.70         # How much of each LED's light is left one frame later (the trails)
-MAX_PARTICLES = 260      # Upper limit, so a slow Pi keeps up during the finale
+MAX_PARTICLES = 320      # Upper limit, so a slow Pi keeps up during the finale
 STAR_COUNT = 5           # Faint twinkling stars in the background
 
 FINALE_EVERY = (40, 55)  # Seconds of normal show between two grand finales
@@ -315,6 +316,23 @@ def strobe(show, x, y):
     show.flash(WHITE, 0.25)
 
 
+def rainbow(show, x, y):
+    """A big explosion in which every spark has its own colour (the joystick's burst)."""
+    hues = COLOURS[:-1]  # Every colour except white
+    turn = random.randrange(len(hues))
+    for k, (vx, vy) in enumerate(ring_of(32, 6.0, 0.12)):
+        colour = hues[(k + turn) % len(hues)]
+        show.add(Particle(x, y, vx, vy, colour, random.uniform(1.3, 1.7), drag=1.6,
+                          colour2=hues[(k + turn + 3) % len(hues)], bright=1.15))
+    for vx, vy in ring_of(10, 2.5, 0.2):  # A white-hot core
+        show.add(Particle(x, y, vx, vy, WHITE, 0.6, drag=2.5, gravity=0.3))
+    show.flash((255, 220, 255), 0.6)
+
+
+# Where the joystick's rainbow explosion goes off for each arrow (x, y)
+ARROW_SPOTS = {"left": (1.8, 3.5), "right": (5.2, 3.5), "up": (3.5, 2.0), "down": (3.5, 4.8)}
+
+
 # How often each burst is picked (bigger number = more often)
 BURSTS = [(peony, 5), (chrysanthemum, 4), (ring, 3), (double_ring, 2), (willow, 3),
           (palm, 2), (crossette, 2), (crackle, 2), (heart, 1), (strobe, 1)]
@@ -408,6 +426,9 @@ class Show:
         for event in events:
             if event.action != "pressed":
                 continue
+            if event.direction in ARROW_SPOTS:
+                x, y = ARROW_SPOTS[event.direction]
+                rainbow(self, x + random.uniform(-0.4, 0.4), y + random.uniform(-0.4, 0.4))
             if event.direction == "left":
                 self.launch(random.uniform(0.8, 2.2))
             elif event.direction == "right":
