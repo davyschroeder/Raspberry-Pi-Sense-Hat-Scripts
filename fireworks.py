@@ -337,6 +337,7 @@ class Show:
         self.next_finale = random.uniform(*FINALE_EVERY)
         self.finale_left = 0.0
         self.quiet = 0.0                       # Pause after a finale
+        self.no_stick = False                  # True once the joystick turned out unreadable
 
     def add(self, thing):
         if len(self.things) < MAX_PARTICLES or isinstance(thing, Rocket):
@@ -395,7 +396,16 @@ class Show:
 
     def joystick(self, sense):
         """Handle joystick pushes: launch your own rockets."""
-        for event in sense.stick.get_events():
+        if self.no_stick:
+            return
+        try:
+            events = sense.stick.get_events()
+        except (AttributeError, OSError):
+            # No joystick to read (e.g. the emulator, or no access to it):
+            # just run the show without it
+            self.no_stick = True
+            return
+        for event in events:
             if event.action != "pressed":
                 continue
             if event.direction == "left":
